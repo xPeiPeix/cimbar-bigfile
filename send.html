@@ -1,0 +1,483 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+  <title>cimbar-bigfile · 发送端</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; }
+    body {
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+      color: #e0e0e0;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+    #header {
+      padding: 8px 16px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      background: rgba(0,0,0,0.4);
+      border-bottom: 1px solid #333;
+      flex-wrap: wrap;
+    }
+    #header h1 { font-size: 14px; font-weight: 500; color: #aaa; }
+    #header .meta { font-size: 12px; color: #888; display: flex; gap: 12px; flex-wrap: wrap; }
+    #header .meta span { white-space: nowrap; }
+    #header .meta b { color: #5fbcff; font-weight: 500; }
+    #ctrl { display: flex; gap: 8px; align-items: center; margin-left: auto; flex-wrap: wrap; }
+    #ctrl label { font-size: 12px; color: #aaa; }
+    #ctrl select, #ctrl input { padding: 4px 8px; background: #222; color: #ddd; border: 1px solid #444; border-radius: 4px; font-size: 12px; }
+    #ctrl button {
+      padding: 6px 16px; background: #4a90e2; color: white; border: none; border-radius: 4px;
+      cursor: pointer; font-size: 13px; font-weight: 500;
+    }
+    #ctrl button:hover:not(:disabled) { background: #5fa3f5; }
+    #ctrl button:disabled { background: #555; cursor: not-allowed; opacity: 0.6; }
+    #ctrl button.stop { background: #e74c3c; }
+    #ctrl button.stop:hover:not(:disabled) { background: #f15a4a; }
+
+    #stage { flex: 1; position: relative; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+
+    #dropzone {
+      position: absolute; inset: 0; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 16px;
+      border: 3px dashed #555; margin: 24px; border-radius: 12px;
+      transition: border-color 0.2s, background 0.2s;
+      cursor: pointer; z-index: 5;
+    }
+    #dropzone:hover, #dropzone.dragover { border-color: #5fbcff; background: rgba(95, 188, 255, 0.05); }
+    #dropzone .icon { font-size: 48px; opacity: 0.5; }
+    #dropzone .hint { color: #aaa; }
+    #dropzone .sub { font-size: 12px; color: #777; }
+    #dropzone.hidden { display: none; }
+
+    #canvas { display: block; max-width: 100%; max-height: 100%; }
+
+    #progress {
+      position: absolute; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.6); padding: 8px 16px; font-size: 12px;
+      display: none; backdrop-filter: blur(8px);
+    }
+    #progress.active { display: block; }
+    #progress .row { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+    #progress .bar-bg {
+      height: 4px; background: #333; border-radius: 2px; overflow: hidden; margin-top: 6px;
+    }
+    #progress .bar-fg {
+      height: 100%; background: linear-gradient(90deg, #4a90e2, #5fbcff);
+      width: 0%; transition: width 0.2s;
+    }
+    #progress .label { color: #aaa; }
+    #progress .value { color: #5fbcff; font-weight: 500; }
+
+    #log {
+      position: absolute; top: 60px; right: 16px;
+      max-width: 320px; max-height: 200px; overflow-y: auto;
+      background: rgba(0,0,0,0.7); padding: 8px 12px; border-radius: 6px;
+      font-family: monospace; font-size: 11px; color: #888;
+      backdrop-filter: blur(4px); display: none;
+    }
+    #log.active { display: block; }
+    #log .err { color: #e74c3c; }
+    #log .ok { color: #5fbcff; }
+  </style>
+</head>
+<body>
+
+<div id="header">
+  <h1>📡 cimbar-bigfile</h1>
+  <div class="meta">
+    <span>文件: <b id="m_filename">—</b></span>
+    <span>大小: <b id="m_filesize">—</b></span>
+    <span>SHA256: <b id="m_filehash">—</b></span>
+    <span>📱 手机应收: <b id="m_chunkcount">—</b></span>
+    <span>encode_id: <b id="m_encodeid">—</b></span>
+  </div>
+  <div id="ctrl">
+    <label>块大小</label>
+    <select id="chunkSize" disabled>
+      <option value="10485760" selected>10 MB</option>
+      <option value="8388608">8 MB</option>
+      <option value="12582912">12 MB</option>
+      <option value="5242880">5 MB</option>
+    </select>
+    <label>FPS</label>
+    <input type="number" id="fps" min="5" max="20" value="15" style="width: 50px;">
+    <label>冗余</label>
+    <input type="number" id="redundancy" min="1.0" max="3.0" step="0.1" value="1.5" style="width: 60px;" title="fountain code 冗余倍数（默认 1.5x）">
+    <button id="btnStart" disabled>开始传输</button>
+    <button id="btnStop" class="stop" disabled>停止</button>
+    <button id="btnDebug" title="切换日志显示">🐛</button>
+  </div>
+</div>
+
+<div id="stage">
+  <div id="dropzone">
+    <div class="icon">📁</div>
+    <div class="hint">拖入文件 / 点击选择</div>
+    <div class="sub">任意大小，会自动切成 10 MB 的块依次发送</div>
+    <input type="file" id="fileInput" style="display:none;">
+  </div>
+  <canvas id="canvas"></canvas>
+</div>
+
+<div id="progress">
+  <div style="margin-bottom: 6px; color: #f5b942; font-weight: 500; text-align: center;">
+    💡 等手机 CFC 弹出 <span id="p_savecount" style="color: #5fbcff; font-size: 14px;">—</span> 次"保存到哪里"对话框（每次都选同一个目录）后即可点停止
+  </div>
+  <div class="row">
+    <span><span class="label">当前块:</span> <span class="value" id="p_chunk">—</span></span>
+    <span><span class="label">本块帧数:</span> <span class="value" id="p_frame">—</span></span>
+    <span><span class="label">总进度:</span> <span class="value" id="p_total">0%</span></span>
+    <span><span class="label">已用:</span> <span class="value" id="p_elapsed">—</span></span>
+    <span><span class="label">剩余:</span> <span class="value" id="p_eta">—</span></span>
+  </div>
+  <div class="bar-bg"><div class="bar-fg" id="p_bar"></div></div>
+</div>
+
+<div id="log"></div>
+
+<script>
+'use strict';
+
+// ============= 工具函数 =============
+function $(id) { return document.getElementById(id); }
+function fmtBytes(n) {
+  if (n < 1024) return n + ' B';
+  if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
+  if (n < 1024 * 1024 * 1024) return (n / 1048576).toFixed(2) + ' MB';
+  return (n / 1073741824).toFixed(2) + ' GB';
+}
+function fmtTime(ms) {
+  if (!ms || !isFinite(ms)) return '—';
+  const s = Math.floor(ms / 1000);
+  const m = Math.floor(s / 60);
+  const h = Math.floor(m / 60);
+  if (h > 0) return `${h}h ${m % 60}m ${s % 60}s`;
+  if (m > 0) return `${m}m ${s % 60}s`;
+  return `${s}s`;
+}
+function log(msg, cls) {
+  const el = $('log');
+  const div = document.createElement('div');
+  if (cls) div.className = cls;
+  const ts = new Date().toLocaleTimeString();
+  div.textContent = `[${ts}] ${msg}`;
+  el.appendChild(div);
+  el.scrollTop = el.scrollHeight;
+  console.log(`[cimbar-bigfile] ${msg}`);
+}
+async function sha256Hex(uint8) {
+  const buf = await crypto.subtle.digest('SHA-256', uint8);
+  return Array.from(new Uint8Array(buf))
+    .map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+// ============= 应用状态 =============
+const State = {
+  file: null,
+  chunks: [],          // Array<Uint8Array>
+  manifest: null,      // manifest object
+  manifestBytes: null, // Uint8Array of JSON-encoded manifest
+  encodeIdBase: 0,
+  // streaming runtime
+  curChunkIndex: -1,   // -1 = idle, 0 = manifest, 1..N = data chunks
+  framesInChunk: 0,
+  framesNeededInChunk: 0,
+  totalFramesSent: 0,
+  totalFramesNeeded: 0,
+  startTime: 0,
+  interval: 66,        // ms per frame
+  redundancy: 1.5,
+  active: false,
+  timer: null,
+};
+
+const ESTIMATED_BYTES_PER_FRAME = 7500; // Mode B default ECC payload
+
+// ============= WASM 集成 =============
+let wasmReady = false;
+
+// Pre-define Module so the wasm glue can find it
+window.Module = {
+  canvas: $('canvas'),
+  onRuntimeInitialized: function () {
+    log('WASM runtime initialized', 'ok');
+    wasmReady = true;
+    // Mode B = 68
+    Module._cimbare_configure(68, -1);
+    log('Configured mode B', 'ok');
+    updateUiState();
+  },
+  print: function (text) { log('[wasm] ' + text); },
+  printErr: function (text) { log('[wasm err] ' + text, 'err'); },
+};
+
+function callInitEncode(filename, encodeId) {
+  const fnBytes = new TextEncoder().encode(filename);
+  const fnPtr = Module._malloc(fnBytes.length);
+  try {
+    new Uint8Array(Module.HEAPU8.buffer, fnPtr, fnBytes.length).set(fnBytes);
+    const ret = Module._cimbare_init_encode(fnPtr, fnBytes.length, encodeId);
+    log(`init_encode("${filename}", id=${encodeId}) → ${ret}`);
+    return ret;
+  } finally {
+    Module._free(fnPtr);
+  }
+}
+
+function feedAllBytes(uint8) {
+  const bufsize = Module._cimbare_encode_bufsize();
+  const dataPtr = Module._malloc(bufsize);
+  try {
+    const wasmView = new Uint8Array(Module.HEAPU8.buffer, dataPtr, bufsize);
+    let offset = 0;
+    while (offset < uint8.length) {
+      const n = Math.min(bufsize, uint8.length - offset);
+      wasmView.set(uint8.subarray(offset, offset + n));
+      Module._cimbare_encode(dataPtr, n);
+      offset += n;
+    }
+    // Final flush call with len=0 (matches main.js behavior)
+    Module._cimbare_encode(dataPtr, 0);
+  } finally {
+    Module._free(dataPtr);
+  }
+}
+
+// ============= 切片与 manifest 生成 =============
+async function prepareFile(file) {
+  log(`Preparing ${file.name} (${fmtBytes(file.size)})`);
+  State.file = file;
+  $('m_filename').textContent = file.name;
+  $('m_filesize').textContent = fmtBytes(file.size);
+
+  const chunkSize = parseInt($('chunkSize').value, 10);
+  const fileBytes = new Uint8Array(await file.arrayBuffer());
+
+  // SHA256 整文件
+  const fullSha = await sha256Hex(fileBytes);
+  $('m_filehash').textContent = fullSha.substring(0, 16) + '…';
+
+  // 切片 + 每块 SHA256
+  const chunkCount = Math.ceil(file.size / chunkSize);
+  const chunks = [];
+  const chunkMeta = [];
+  for (let i = 0; i < chunkCount; i++) {
+    const start = i * chunkSize;
+    const end = Math.min(start + chunkSize, file.size);
+    const slice = fileBytes.subarray(start, end);
+    const sha = await sha256Hex(slice);
+    chunks.push(slice);
+    chunkMeta.push({ index: i, size: slice.length, sha256: sha });
+  }
+  State.chunks = chunks;
+  $('m_chunkcount').textContent = `${chunkCount + 1} 个文件 (1 manifest.json + ${chunkCount} 数据块)`;
+
+  // encode_id_base：时间戳低 16 位
+  State.encodeIdBase = Math.floor(Date.now() / 1000) & 0xFFFF;
+  $('m_encodeid').textContent = State.encodeIdBase;
+
+  // manifest
+  State.manifest = {
+    version: 1,
+    tool: 'cimbar-bigfile',
+    filename: file.name,
+    total_size: file.size,
+    sha256: fullSha,
+    chunk_size: chunkSize,
+    chunk_count: chunkCount,
+    encode_id_base: State.encodeIdBase,
+    chunks: chunkMeta,
+  };
+  State.manifestBytes = new TextEncoder().encode(JSON.stringify(State.manifest));
+  $('p_savecount').textContent = `${chunkCount + 1}`;
+  log(`Sliced into ${chunkCount} chunks, manifest = ${State.manifestBytes.length} bytes`, 'ok');
+
+  // 估算总帧数
+  const redundancy = parseFloat($('redundancy').value) || 1.5;
+  State.redundancy = redundancy;
+  let totalFrames = framesNeededFor(State.manifestBytes.length, redundancy);
+  for (const c of chunks) totalFrames += framesNeededFor(c.length, redundancy);
+  State.totalFramesNeeded = totalFrames;
+
+  updateUiState();
+}
+
+function framesNeededFor(byteCount, redundancy) {
+  return Math.max(30, Math.ceil(byteCount / ESTIMATED_BYTES_PER_FRAME * redundancy));
+}
+
+// ============= 主循环 =============
+function startTransmission() {
+  if (!wasmReady || !State.manifest) {
+    log('Cannot start: wasm or manifest not ready', 'err');
+    return;
+  }
+  State.active = true;
+  State.startTime = performance.now();
+  State.curChunkIndex = -1;
+  State.totalFramesSent = 0;
+  State.loopCount = 0;
+  State.lastUiUpdate = 0;
+  State.interval = Math.floor(1000 / (parseInt($('fps').value, 10) || 15));
+  State.redundancy = parseFloat($('redundancy').value) || 1.5;
+  $('dropzone').classList.add('hidden');
+  $('progress').classList.add('active');
+  $('btnStart').disabled = true;
+  $('btnStop').disabled = false;
+  $('chunkSize').disabled = true;
+  log(`Starting transmission, interval=${State.interval}ms, redundancy=${State.redundancy}x`, 'ok');
+  advanceToNextChunk();
+  scheduleNextFrame();
+}
+
+function stopTransmission() {
+  State.active = false;
+  if (State.timer) {
+    clearTimeout(State.timer);
+    State.timer = null;
+  }
+  $('btnStart').disabled = false;
+  $('btnStop').disabled = true;
+  $('chunkSize').disabled = false;
+  log('Stopped', 'ok');
+}
+
+function advanceToNextChunk() {
+  State.curChunkIndex += 1;
+  State.framesInChunk = 0;
+
+  const total = 1 + State.chunks.length; // 1 manifest + N data chunks
+  if (State.curChunkIndex >= total) {
+    // All streams sent at least once. Loop back to manifest (index 0).
+    // Critical: manifest MUST be in the loop so a late receiver can still capture it.
+    // CFC's fountain_decoder_sink keeps adding new frames to a stream until it's complete,
+    // so re-running init_encode with the same encode_id continues the same stream from CFC's view.
+    State.loopCount = (State.loopCount || 0) + 1;
+    log(`All streams sent ${State.loopCount}× round(s). Looping back to manifest.`, 'ok');
+    State.curChunkIndex = 0;
+    State.framesInChunk = 0;
+  }
+
+  if (State.curChunkIndex === 0) {
+    // manifest
+    callInitEncode('manifest.json', State.encodeIdBase + 0);
+    feedAllBytes(State.manifestBytes);
+    State.framesNeededInChunk = framesNeededFor(State.manifestBytes.length, State.redundancy);
+    log(`>>> Sending manifest (${State.manifestBytes.length} bytes, ~${State.framesNeededInChunk} frames)`, 'ok');
+  } else {
+    const dataIdx = State.curChunkIndex - 1;
+    const chunk = State.chunks[dataIdx];
+    const basename = stripExt(State.manifest.filename);
+    const padW = State.chunks.length < 100 ? 2 : (State.chunks.length < 1000 ? 3 : 4);
+    const partName = `${basename}.part${String(dataIdx).padStart(padW, '0')}.bin`;
+    callInitEncode(partName, State.encodeIdBase + 1 + dataIdx);
+    feedAllBytes(chunk);
+    State.framesNeededInChunk = framesNeededFor(chunk.length, State.redundancy);
+    log(`>>> Chunk ${dataIdx + 1}/${State.chunks.length} "${partName}" (${fmtBytes(chunk.length)}, ~${State.framesNeededInChunk} frames)`, 'ok');
+  }
+}
+
+function stripExt(filename) {
+  const lastDot = filename.lastIndexOf('.');
+  return lastDot > 0 ? filename.substring(0, lastDot) : filename;
+}
+
+function scheduleNextFrame() {
+  if (!State.active) return;
+  const start = performance.now();
+
+  Module._cimbare_render();
+  Module._cimbare_next_frame(false);
+  State.framesInChunk += 1;
+  State.totalFramesSent += 1;
+
+  // 检查当前 chunk 是否已发够帧数
+  if (State.framesInChunk >= State.framesNeededInChunk) {
+    advanceToNextChunk();
+  }
+
+  // UI 更新限频到每秒一次，避免抖动
+  const now = performance.now();
+  if (now - State.lastUiUpdate >= 1000) {
+    State.lastUiUpdate = now;
+    updateProgressUI();
+  }
+
+  const elapsed = performance.now() - start;
+  const next = Math.max(0, State.interval - elapsed);
+  State.timer = setTimeout(scheduleNextFrame, next);
+}
+
+// ============= UI =============
+function updateUiState() {
+  const ready = wasmReady && State.manifest !== null;
+  $('btnStart').disabled = !ready || State.active;
+}
+
+function updateProgressUI() {
+  const curHuman = State.curChunkIndex === 0
+    ? `manifest${State.loopCount > 0 ? ` (第 ${State.loopCount + 1} 轮)` : ''}`
+    : `${State.curChunkIndex}/${State.chunks.length}${State.loopCount > 0 ? ` (第 ${State.loopCount + 1} 轮)` : ''}`;
+  $('p_chunk').textContent = curHuman;
+  $('p_frame').textContent = `${State.framesInChunk}/${State.framesNeededInChunk}`;
+
+  // 总进度只在第一轮有意义；循环中显示"持续传输中"
+  const elapsedMs = performance.now() - State.startTime;
+  $('p_elapsed').textContent = fmtTime(elapsedMs);
+
+  if (State.loopCount === 0) {
+    const pct = Math.min(100, (State.totalFramesSent / State.totalFramesNeeded) * 100);
+    $('p_total').textContent = pct.toFixed(1) + '%';
+    $('p_bar').style.width = pct + '%';
+
+    if (State.totalFramesSent > 30) {
+      const eta = (elapsedMs / State.totalFramesSent) * (State.totalFramesNeeded - State.totalFramesSent);
+      $('p_eta').textContent = '首轮约 ' + fmtTime(eta);
+    }
+  } else {
+    $('p_total').textContent = '🔁 持续传输中';
+    $('p_bar').style.width = '100%';
+    $('p_eta').textContent = '循环补帧中，可随时停止';
+  }
+}
+
+// ============= 事件绑定 =============
+$('dropzone').addEventListener('click', () => $('fileInput').click());
+$('fileInput').addEventListener('change', async (e) => {
+  const f = e.target.files[0];
+  if (f) await prepareFile(f);
+});
+$('dropzone').addEventListener('dragover', (e) => {
+  e.preventDefault();
+  $('dropzone').classList.add('dragover');
+});
+$('dropzone').addEventListener('dragleave', () => {
+  $('dropzone').classList.remove('dragover');
+});
+$('dropzone').addEventListener('drop', async (e) => {
+  e.preventDefault();
+  $('dropzone').classList.remove('dragover');
+  const f = e.dataTransfer.files[0];
+  if (f) await prepareFile(f);
+});
+
+$('btnStart').addEventListener('click', startTransmission);
+$('btnStop').addEventListener('click', stopTransmission);
+$('btnDebug').addEventListener('click', () => $('log').classList.toggle('active'));
+
+// 防止整页拖拽默认行为
+window.addEventListener('dragover', (e) => e.preventDefault());
+window.addEventListener('drop', (e) => e.preventDefault());
+
+log('Page loaded, waiting for wasm runtime...');
+</script>
+
+<script src="vendor/cimbar-wasm-v0.6.4/cimbar_js.2026-01-20T0312.js"></script>
+
+</body>
+</html>

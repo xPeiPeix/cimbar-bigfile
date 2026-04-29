@@ -1,0 +1,447 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>cimbar-bigfile · 拼接端</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; }
+    body {
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+      color: #e0e0e0;
+      min-height: 100vh;
+      padding: 24px;
+      overflow-y: auto;
+    }
+    .container { max-width: 900px; margin: 0 auto; }
+    h1 { font-size: 20px; font-weight: 500; margin-bottom: 4px; color: #5fbcff; }
+    .sub { color: #888; font-size: 13px; margin-bottom: 24px; }
+
+    #dropzone {
+      border: 3px dashed #555;
+      border-radius: 12px;
+      padding: 48px 24px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+      margin-bottom: 24px;
+    }
+    #dropzone:hover, #dropzone.dragover {
+      border-color: #5fbcff;
+      background: rgba(95, 188, 255, 0.05);
+    }
+    #dropzone .icon { font-size: 48px; opacity: 0.5; margin-bottom: 12px; }
+    #dropzone .hint { color: #aaa; margin-bottom: 4px; }
+    #dropzone .sub2 { font-size: 12px; color: #777; }
+
+    .filelist {
+      background: rgba(0,0,0,0.3);
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 16px;
+      max-height: 240px;
+      overflow-y: auto;
+    }
+    .filelist .row {
+      display: flex; gap: 8px; align-items: center;
+      padding: 4px 8px; font-size: 13px; font-family: monospace;
+      border-bottom: 1px solid #2a2a3e;
+    }
+    .filelist .row:last-child { border-bottom: none; }
+    .filelist .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .filelist .size { color: #888; }
+    .filelist .badge {
+      padding: 2px 8px; border-radius: 12px; font-size: 11px;
+      text-transform: uppercase; font-weight: 600;
+    }
+    .filelist .badge.manifest { background: #5fbcff; color: #0a0a1a; }
+    .filelist .badge.chunk { background: #50c878; color: #0a0a1a; }
+    .filelist .badge.unknown { background: #555; color: #ccc; }
+
+    .info {
+      background: rgba(0,0,0,0.3);
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+    .info h2 { font-size: 14px; color: #5fbcff; margin-bottom: 12px; font-weight: 500; }
+    .info-grid {
+      display: grid; grid-template-columns: auto 1fr;
+      gap: 4px 12px; font-size: 13px;
+    }
+    .info-grid .k { color: #888; }
+    .info-grid .v { font-family: monospace; }
+    .info-grid .v.ok { color: #50c878; }
+    .info-grid .v.err { color: #e74c3c; }
+    .info-grid .v.warn { color: #f5b942; }
+
+    .actions {
+      display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap;
+    }
+    .actions button {
+      padding: 8px 16px; background: #4a90e2; color: white; border: none; border-radius: 4px;
+      cursor: pointer; font-size: 13px; font-weight: 500;
+    }
+    .actions button:hover:not(:disabled) { background: #5fa3f5; }
+    .actions button:disabled { background: #555; cursor: not-allowed; opacity: 0.6; }
+    .actions button.secondary { background: #555; }
+    .actions button.secondary:hover:not(:disabled) { background: #666; }
+
+    .log {
+      background: rgba(0,0,0,0.5);
+      border-radius: 8px;
+      padding: 12px;
+      font-family: monospace;
+      font-size: 11px;
+      max-height: 200px;
+      overflow-y: auto;
+      color: #888;
+    }
+    .log .ok { color: #50c878; }
+    .log .err { color: #e74c3c; }
+    .log .warn { color: #f5b942; }
+
+    .progress-bar {
+      height: 8px; background: #2a2a3e; border-radius: 4px; overflow: hidden;
+      margin: 8px 0;
+    }
+    .progress-bar .fill {
+      height: 100%; background: linear-gradient(90deg, #4a90e2, #5fbcff);
+      width: 0%; transition: width 0.2s;
+    }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <h1>📥 cimbar-bigfile · 拼接端</h1>
+  <div class="sub">把 CFC 接收到的所有文件拖入下方，自动识别 manifest 并拼接还原原文件</div>
+
+  <div id="dropzone">
+    <div class="icon">📁</div>
+    <div class="hint">拖入所有接收到的文件（manifest.json + *.partXX.bin）</div>
+    <div class="sub2">支持选择多个文件 · 自动识别顺序 · 全程在浏览器本地处理</div>
+    <input type="file" id="fileInput" multiple style="display:none;">
+  </div>
+
+  <div id="filelist" class="filelist" style="display:none;"></div>
+  <div id="info" class="info" style="display:none;"></div>
+
+  <div class="actions">
+    <button id="btnReassemble" disabled>开始拼接 + 校验 + 下载</button>
+    <button id="btnClear" class="secondary" disabled>清空</button>
+  </div>
+
+  <div class="progress-bar" style="display:none;" id="pbarBox">
+    <div class="fill" id="pbar"></div>
+  </div>
+
+  <div class="log" id="log"></div>
+</div>
+
+<script>
+'use strict';
+
+function $(id) { return document.getElementById(id); }
+function fmtBytes(n) {
+  if (n < 1024) return n + ' B';
+  if (n < 1048576) return (n / 1024).toFixed(1) + ' KB';
+  if (n < 1073741824) return (n / 1048576).toFixed(2) + ' MB';
+  return (n / 1073741824).toFixed(2) + ' GB';
+}
+function log(msg, cls) {
+  const el = $('log');
+  const div = document.createElement('div');
+  if (cls) div.className = cls;
+  div.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+  el.appendChild(div);
+  el.scrollTop = el.scrollHeight;
+  console.log('[reassemble] ' + msg);
+}
+async function sha256Hex(uint8) {
+  const buf = await crypto.subtle.digest('SHA-256', uint8);
+  return Array.from(new Uint8Array(buf))
+    .map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+// ============= 状态 =============
+const State = {
+  files: [],          // 用户拖入的所有 File 对象
+  manifestFile: null,
+  manifest: null,
+  partFiles: new Map(), // index -> File (按 chunks[].index 索引)
+  unknownFiles: [],
+};
+
+// ============= 文件分类 =============
+async function ingest(files) {
+  for (const f of files) {
+    State.files.push(f);
+  }
+  await classifyFiles();
+  renderFileList();
+  await tryParseManifest();
+  renderInfo();
+  $('btnReassemble').disabled = !canReassemble();
+  $('btnClear').disabled = State.files.length === 0;
+}
+
+async function classifyFiles() {
+  // 简单按文件名识别
+  State.manifestFile = null;
+  State.partFiles = new Map();
+  State.unknownFiles = [];
+
+  for (const f of State.files) {
+    if (/^manifest\.json$/i.test(f.name)) {
+      State.manifestFile = f;
+    } else {
+      // 尝试匹配 *.partXX.bin
+      const m = f.name.match(/\.part(\d+)\.bin$/i);
+      if (m) {
+        const idx = parseInt(m[1], 10);
+        State.partFiles.set(idx, f);
+      } else {
+        State.unknownFiles.push(f);
+      }
+    }
+  }
+}
+
+async function tryParseManifest() {
+  if (!State.manifestFile) {
+    State.manifest = null;
+    return;
+  }
+  try {
+    const txt = await State.manifestFile.text();
+    const m = JSON.parse(txt);
+    if (m.tool !== 'cimbar-bigfile') {
+      log(`Manifest.tool="${m.tool}", expected "cimbar-bigfile". Continuing anyway.`, 'warn');
+    }
+    if (m.version !== 1) {
+      log(`Unsupported manifest version: ${m.version}. This tool understands version 1.`, 'err');
+      State.manifest = null;
+      return;
+    }
+    if (!Array.isArray(m.chunks) || m.chunks.length !== m.chunk_count) {
+      log(`Malformed manifest: chunks array length ${m.chunks?.length} != chunk_count ${m.chunk_count}`, 'err');
+      State.manifest = null;
+      return;
+    }
+    State.manifest = m;
+    log(`Manifest OK: ${m.filename}, ${fmtBytes(m.total_size)}, ${m.chunk_count} chunks`, 'ok');
+  } catch (e) {
+    log(`Failed to parse manifest: ${e.message}`, 'err');
+    State.manifest = null;
+  }
+}
+
+function canReassemble() {
+  if (!State.manifest) return false;
+  for (let i = 0; i < State.manifest.chunk_count; i++) {
+    if (!State.partFiles.has(i)) return false;
+  }
+  return true;
+}
+
+function renderFileList() {
+  const el = $('filelist');
+  if (State.files.length === 0) {
+    el.style.display = 'none';
+    return;
+  }
+  el.style.display = 'block';
+  el.innerHTML = '';
+  for (const f of State.files) {
+    const row = document.createElement('div');
+    row.className = 'row';
+    let badge, badgeClass;
+    if (f === State.manifestFile) {
+      badge = 'MANIFEST'; badgeClass = 'manifest';
+    } else if (Array.from(State.partFiles.values()).includes(f)) {
+      const idx = Array.from(State.partFiles.entries()).find(([k, v]) => v === f)[0];
+      badge = `PART ${idx}`; badgeClass = 'chunk';
+    } else {
+      badge = 'UNKNOWN'; badgeClass = 'unknown';
+    }
+    row.innerHTML = `
+      <span class="badge ${badgeClass}">${badge}</span>
+      <span class="name">${escapeHtml(f.name)}</span>
+      <span class="size">${fmtBytes(f.size)}</span>
+    `;
+    el.appendChild(row);
+  }
+}
+
+function escapeHtml(s) {
+  return s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function renderInfo() {
+  const el = $('info');
+  if (!State.manifest) {
+    el.style.display = 'none';
+    return;
+  }
+  el.style.display = 'block';
+  const m = State.manifest;
+  const missing = [];
+  for (let i = 0; i < m.chunk_count; i++) {
+    if (!State.partFiles.has(i)) missing.push(i);
+  }
+  const ok = missing.length === 0;
+  el.innerHTML = `
+    <h2>📋 manifest 解析结果</h2>
+    <div class="info-grid">
+      <span class="k">原文件名:</span> <span class="v">${escapeHtml(m.filename)}</span>
+      <span class="k">原大小:</span> <span class="v">${fmtBytes(m.total_size)}</span>
+      <span class="k">原 SHA256:</span> <span class="v">${m.sha256}</span>
+      <span class="k">块大小:</span> <span class="v">${fmtBytes(m.chunk_size)}</span>
+      <span class="k">块总数:</span> <span class="v">${m.chunk_count}</span>
+      <span class="k">encode_id_base:</span> <span class="v">${m.encode_id_base}</span>
+      <span class="k">已收到的块:</span> <span class="v ${ok ? 'ok' : 'err'}">${m.chunk_count - missing.length}/${m.chunk_count}</span>
+      ${missing.length > 0 ? `<span class="k">缺失的块:</span> <span class="v err">${missing.join(', ')}</span>` : ''}
+      <span class="k">未识别文件:</span> <span class="v ${State.unknownFiles.length === 0 ? 'ok' : 'warn'}">${State.unknownFiles.length}</span>
+    </div>
+  `;
+}
+
+// ============= 拼接 + 校验 =============
+async function reassemble() {
+  if (!canReassemble()) {
+    log('Cannot reassemble: missing chunks or manifest', 'err');
+    return;
+  }
+  $('btnReassemble').disabled = true;
+  $('btnClear').disabled = true;
+  $('pbarBox').style.display = 'block';
+  $('pbar').style.width = '0%';
+
+  const m = State.manifest;
+  const total = m.total_size;
+  log(`Starting reassembly: ${m.filename} (${fmtBytes(total)})`, 'ok');
+
+  // 1. 校验每块 SHA256 + 收集字节
+  const buffers = [];
+  for (let i = 0; i < m.chunk_count; i++) {
+    const expected = m.chunks[i];
+    const file = State.partFiles.get(i);
+    if (!file) {
+      log(`Missing chunk ${i}`, 'err');
+      $('btnReassemble').disabled = false;
+      return;
+    }
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    if (bytes.length !== expected.size) {
+      log(`Chunk ${i} size mismatch: file=${bytes.length}, expected=${expected.size}`, 'err');
+      $('btnReassemble').disabled = false;
+      return;
+    }
+    const sha = await sha256Hex(bytes);
+    if (sha !== expected.sha256) {
+      log(`Chunk ${i} SHA256 mismatch! expected=${expected.sha256}, got=${sha}`, 'err');
+      log(`File "${file.name}" may be corrupted. Re-receive this chunk.`, 'err');
+      $('btnReassemble').disabled = false;
+      return;
+    }
+    log(`Chunk ${i} OK (${fmtBytes(bytes.length)}, ${sha.substring(0, 12)}…)`, 'ok');
+    buffers.push(bytes);
+
+    const pct = ((i + 1) / m.chunk_count) * 50; // 0-50%
+    $('pbar').style.width = pct + '%';
+  }
+
+  // 2. 拼接
+  log('Concatenating chunks...', 'ok');
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const buf of buffers) {
+    out.set(buf, offset);
+    offset += buf.length;
+  }
+  if (offset !== total) {
+    log(`Total size mismatch: concatenated=${offset}, manifest=${total}`, 'err');
+    $('btnReassemble').disabled = false;
+    return;
+  }
+  $('pbar').style.width = '75%';
+
+  // 3. 全文 SHA256 校验
+  log('Verifying full-file SHA256...', 'ok');
+  const finalSha = await sha256Hex(out);
+  if (finalSha !== m.sha256) {
+    log(`FULL FILE SHA256 MISMATCH! expected=${m.sha256}, got=${finalSha}`, 'err');
+    log('This should never happen if all chunk SHA256s passed. Possible manifest corruption.', 'err');
+    $('btnReassemble').disabled = false;
+    return;
+  }
+  $('pbar').style.width = '100%';
+  log(`Full-file SHA256 verified: ${finalSha}`, 'ok');
+
+  // 4. 触发下载
+  const blob = new Blob([out], { type: 'application/octet-stream' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = m.filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+
+  log(`✅ Done! Downloaded as "${m.filename}"`, 'ok');
+  $('btnReassemble').disabled = false;
+  $('btnClear').disabled = false;
+}
+
+// ============= 事件绑定 =============
+$('dropzone').addEventListener('click', () => $('fileInput').click());
+$('fileInput').addEventListener('change', async (e) => {
+  if (e.target.files && e.target.files.length > 0) {
+    await ingest(Array.from(e.target.files));
+  }
+  e.target.value = '';
+});
+$('dropzone').addEventListener('dragover', (e) => {
+  e.preventDefault();
+  $('dropzone').classList.add('dragover');
+});
+$('dropzone').addEventListener('dragleave', () => {
+  $('dropzone').classList.remove('dragover');
+});
+$('dropzone').addEventListener('drop', async (e) => {
+  e.preventDefault();
+  $('dropzone').classList.remove('dragover');
+  if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+    await ingest(Array.from(e.dataTransfer.files));
+  }
+});
+
+$('btnReassemble').addEventListener('click', reassemble);
+$('btnClear').addEventListener('click', () => {
+  State.files = [];
+  State.manifestFile = null;
+  State.manifest = null;
+  State.partFiles = new Map();
+  State.unknownFiles = [];
+  $('filelist').style.display = 'none';
+  $('info').style.display = 'none';
+  $('pbarBox').style.display = 'none';
+  $('pbar').style.width = '0%';
+  $('btnReassemble').disabled = true;
+  $('btnClear').disabled = true;
+  $('log').innerHTML = '';
+  log('Cleared');
+});
+
+// 防止整页拖拽默认行为
+window.addEventListener('dragover', (e) => e.preventDefault());
+window.addEventListener('drop', (e) => e.preventDefault());
+
+log('Ready. Drag in manifest.json + all *.partXX.bin files.');
+</script>
+
+</body>
+</html>
