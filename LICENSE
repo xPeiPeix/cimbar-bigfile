@@ -1,0 +1,55 @@
+MIT License
+
+Copyright (c) 2026 peipei
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+================================================================================
+THIRD-PARTY LICENSES
+================================================================================
+
+The MIT License above applies ONLY to source code authored as part of the
+cimbar-bigfile project itself (send.html, reassemble.html, docs/*, etc.).
+
+Files vendored under vendor/ are governed by their original licenses, which
+differ from the MIT License above. Each vendored component retains its
+upstream copyright.
+
+Component:    libcimbar (https://github.com/sz3/libcimbar)
+Vendored as:  vendor/cimbar_js.html
+              vendor/cimbar.wasm.tar.gz
+              vendor/cimbar-wasm-v0.6.4/*
+License:      Mozilla Public License Version 2.0
+License text: vendor/LICENSE-libcimbar
+Source:       https://github.com/sz3/libcimbar/tree/v0.6.4
+Notice:       Per MPL 2.0 §3.2, the source code corresponding to the
+              compiled wasm binaries vendored here is publicly available
+              at the URL above. Recipients may obtain it without charge.
+
+Component:    wirehair (https://github.com/catid/wirehair)
+Vendored as:  Embedded inside libcimbar's compiled wasm binary
+License:      BSD 3-Clause License (Copyright (c) 2018 Christopher A. Taylor)
+License text: vendor/LICENSE-wirehair
+
+Component:    CameraFileCopy / CFC (https://github.com/sz3/cfc)
+Used as:      Recommended Android receiver app (NOT vendored in this repo)
+License:      MIT License
+Notice:       CFC is the recommended decoder for cimbar-bigfile transmissions.
+              Users install it separately from F-Droid / Google Play / GitHub
+              Releases. No CFC code is redistributed by this project.

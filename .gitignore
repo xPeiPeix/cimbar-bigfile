@@ -1,0 +1,39 @@
+# Test samples
+test/
+samples/
+*.test.bin
+*.partXX.bin
+
+# Reassembled outputs (大文件别提交)
+*.recovered
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+ehthumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.history/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+
+# Node / build artifacts (预留)
+node_modules/
+dist/
+build/
+.cache/
+.parcel-cache/
+
+# Local secrets (防御性)
+.env
+.env.local
+*.secret.*
