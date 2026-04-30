@@ -369,6 +369,8 @@ function applyMode() {
     for (const c of State.chunks) total += framesNeededFor(c.length, r);
     State.totalFramesNeeded = total;
   }
+  // 按钮组随 simpleMode/chunks 变化重渲染 (active 状态由 State.active 决定 disabled)
+  renderJumpButtons();
 }
 
 // ============= 切片与 manifest 生成 =============
@@ -393,6 +395,7 @@ async function prepareFile(file) {
     State.manifestBytes = null;
     State.file = null;
     State.simpleMode = false;
+    State.jumpRequested = null;
     $('btnStart').disabled = true;
 
     log(`Preparing ${file.name} (${fmtBytes(file.size)})`);
@@ -481,12 +484,13 @@ function startTransmission() {
   State.active = true;
   State.startTime = performance.now();
   State.curChunkIndex = -1;
+  State.jumpRequested = null;
   State.totalFramesSent = 0;
   State.loopCount = 0;
   State.lastUiUpdate = 0;
   State.interval = Math.floor(1000 / (parseInt($('fps').value, 10) || 15));
   State.redundancy = parseFloat($('redundancy').value) || 1.5;
-  applyMode();   // 兜底重设 UI + 用最新 redundancy 重算 totalFramesNeeded
+  applyMode();   // 兜底重设 UI + 用最新 redundancy 重算 totalFramesNeeded; 同时 renderJumpButtons 用 active=true 渲染可点击按钮
   $('canvas').style.visibility = 'visible';
   $('dropzone').classList.add('hidden');
   $('progress').classList.add('active');
@@ -502,6 +506,7 @@ function startTransmission() {
 
 function stopTransmission() {
   State.active = false;
+  State.jumpRequested = null;
   if (State.timer) {
     clearTimeout(State.timer);
     State.timer = null;
@@ -513,6 +518,8 @@ function stopTransmission() {
   $('dropzone').classList.remove('hidden');
   $('progress').classList.remove('active');
   requestAnimationFrame(fitCanvas);
+  // 重渲按钮组让其变 disabled 样式 (State.active=false 已经设置)
+  renderJumpButtons();
   updateUiState();
   log('Stopped. 拖入新文件换文件, 或再点开始继续当前文件', 'ok');
 }
