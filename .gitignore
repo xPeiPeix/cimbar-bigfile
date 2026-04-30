@@ -26,6 +26,9 @@ ehthumbs.db
 npm-debug.log*
 yarn-debug.log*
 
+# Playwright CLI session cache (snapshots / console logs)
+.playwright-cli/
+
 # Node / build artifacts (预留)
 node_modules/
 dist/
