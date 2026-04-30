@@ -17,12 +17,14 @@
 ### 准备
 
 1. **接收端**：手机安装 [CameraFileCopy](https://github.com/sz3/cfc/releases) (F-Droid / Google Play / GitHub Release APK)
-2. **发送端**：电脑浏览器双击打开 `send.html`（无需联网）
-3. **拼接端**：任意浏览器双击打开 `reassemble.html`（无需联网）
+2. **发送端**：电脑浏览器双击打开 `send.standalone.html`（自包含单文件版，无需联网，**推荐**）
+3. **拼接端**：任意浏览器双击打开 `reassemble.html`（零依赖纯 JS，无需联网）
+
+> 也可以用模块化的 `send.html`（开发版），但需要先起本地 HTTP server（见下文 [开发](#开发) 段），因为浏览器在 `file://` 协议下会拦截 wasm 文件加载。普通用户用 standalone 版更简单。
 
 ### 发送
 
-1. 打开 `send.html`
+1. 打开 `send.standalone.html`
 2. 把要传的文件拖入页面
 3. 点击 "开始传输"，屏幕开始播放彩色码动画
 4. **保持屏幕不动直到所有块发完**
@@ -32,9 +34,11 @@
 1. 手机打开 CFC，对着电脑屏幕
 2. 每完成一块，CFC 会弹出"保存到哪里"对话框
 3. **每次都选同一个目录**（推荐建一个 `cimbar-bigfile-job1/` 目录）
-4. 全部接收完后会得到 N+1 个文件：`manifest.json` + `<filename>.part00.bin` ... `<filename>.partNN.bin`
+4. 全部接收完后：
+   - **小文件（≤ 块大小，默认 ≤ 10 MB）**：直接 1 个原文件名的文件，**不需要拼接**，CFC 落盘的就是原文件
+   - **大文件（> 块大小）**：N+1 个文件 `manifest.json` + `<filename>.part00.bin` ... `<filename>.partNN.bin`，需要走下面的拼接步骤
 
-### 拼接
+### 拼接（仅大文件需要）
 
 1. 把手机里的所有文件传到电脑（USB / 邮件 / 任何方式）
 2. 浏览器打开 `reassemble.html`
@@ -55,7 +59,7 @@
 | CFC 扫描很慢 | 帧率太高摄像头跟不上 | send.html 把 FPS 调到 10-12 |
 | 某些块没收到 | fountain 冗余不够 | send.html 把 "冗余" 调到 2.0 或更高，让发送端给每块多发些帧 |
 | 拼接 SHA256 校验失败 | 某块在传输中损坏 | 看哪块失败 → 重新发送（用同一 encode_id_base 重启 send.html，跳到那块） |
-| 浏览器加载 wasm 失败 | file:// 协议被 CORS 拦截 | 用本地 HTTP server：`python -m http.server 8000` 然后浏览器访问 `http://localhost:8000/send.html` |
+| 浏览器加载 wasm 失败 | file:// 协议被 CORS 拦截（开发版 `send.html` 才有此问题） | 改用 `send.standalone.html`（双击即可），或用本地 HTTP server：`python -m http.server 8000` 访问 `http://localhost:8000/send.html` |
 | 文件名乱码 | 系统字符编码问题 | manifest 强制 UTF-8，检查浏览器/手机系统编码 |
 | 浏览器卡顿 | 文件太大 wasm 堆压力 | 降低单块大小（默认 10MB → 5MB） |
 | Android 保存对话框点烦了 | 块数太多 | 见 [ROADMAP.md](ROADMAP.md) Plan B（fork CFC 加批量保存模式） |
@@ -66,10 +70,10 @@
 
 | 文件大小 | 块数 | 弹窗次数 | 预估耗时 | 实测吞吐 |
 |---------|------|---------|---------|---------|
-| 5 MB | 1 块 | 2 次（manifest + 1 块） | ~1 分钟 | ~85 KB/s |
-| 30 MB | 3 块 | 4 次 | ~5 分钟 | ~100 KB/s |
-| 100 MB | 10 块 | 11 次 | ~16-20 分钟 | ~106 KB/s |
-| 500 MB | 50 块 | 51 次 | ~80-100 分钟 | ~106 KB/s |
+| 5 MB | 1 块（直发，无 manifest） | 1 次 | ~1 分钟 | ~85 KB/s |
+| 30 MB | 3 块 | 4 次（manifest + 3 块） | ~5 分钟 | ~100 KB/s |
+| 100 MB | 10 块 | 11 次（manifest + 10 块） | ~16-20 分钟 | ~106 KB/s |
+| 500 MB | 50 块 | 51 次（manifest + 50 块） | ~80-100 分钟 | ~106 KB/s |
 
 > 实际吞吐受光线、屏幕亮度、相机自动对焦稳定性影响很大。
 
@@ -104,6 +108,17 @@ mv <timestamped-dir>/ cimbar-wasm-vX.Y.Z/
 python -m http.server 8000
 # 浏览器访问 http://localhost:8000/send.html
 ```
+
+### 构建自包含单文件版
+
+`send.standalone.html` 是给最终用户的"双击即用"版本，把 vendor wasm + glue js 都 base64 inline 进 HTML，脱离 HTTP server。每次升级 vendor 后必须重新构建：
+
+```bash
+PYTHONIOENCODING=utf-8 PYTHONUTF8=1 python scripts/build-standalone.py
+# 输出 send.standalone.html (约 2.5 MB)
+```
+
+构建脚本只读 `send.html` + `vendor/cimbar-wasm-v0.6.4/cimbar_js.*.js` + `cimbar_js.*.wasm`，输出独立文件到仓库根目录。原理：替换 `<script src="vendor/...">` 为 inline `<script>` 把 base64 解码成 `Module.wasmBinary`，emscripten glue 检测到就跳过 fetch。
 
 ## 架构与协议
 

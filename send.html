@@ -45,23 +45,32 @@
       position: absolute; inset: 0; display: flex; flex-direction: column;
       align-items: center; justify-content: center; gap: 16px;
       border: 3px dashed #555; margin: 24px; border-radius: 12px;
+      /* 不透明深色背景遮挡底层 canvas (前一次传输的码图), 否则 dropzone 重新出现时会看到重叠 */
+      background: rgba(15, 25, 50, 0.94);
       transition: border-color 0.2s, background 0.2s;
       cursor: pointer; z-index: 5;
     }
-    #dropzone:hover, #dropzone.dragover { border-color: #5fbcff; background: rgba(95, 188, 255, 0.05); }
+    #dropzone:hover, #dropzone.dragover { border-color: #5fbcff; background: rgba(30, 60, 110, 0.94); }
     #dropzone .icon { font-size: 48px; opacity: 0.5; }
     #dropzone .hint { color: #aaa; }
     #dropzone .sub { font-size: 12px; color: #777; }
     #dropzone.hidden { display: none; }
 
-    #canvas { display: block; max-width: 100%; max-height: 100%; }
+    /* canvas 显式尺寸由 fitCanvas() 计算，不能用 max-width/height
+       因为 canvas 长宽比由 cimbar wasm 决定（_cimbare_get_aspect_ratio），
+       max-* 各自独立约束会破坏比例 → CFC 扫不到完整定位 marker.
+       默认 visibility: hidden — 只在 startTransmission 时显示, 防止 dropzone margin 区域露出旧码图 */
+    #canvas { display: block; visibility: hidden; }
 
+    /* 用 visibility 而非 display 切换显隐: 保持 progress 永远占据布局空间,
+       让 stage 高度恒定, canvas fitCanvas 不会因 progress 显隐而尺寸跳变.
+       (vendor 的实现没这个问题是因为它没有 progress 这种切换显隐的占位元素) */
     #progress {
-      position: absolute; left: 0; right: 0; bottom: 0;
+      flex-shrink: 0;
       background: rgba(0,0,0,0.6); padding: 8px 16px; font-size: 12px;
-      display: none; backdrop-filter: blur(8px);
+      visibility: hidden; border-top: 1px solid #333;
     }
-    #progress.active { display: block; }
+    #progress.active { visibility: visible; }
     #progress .row { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
     #progress .bar-bg {
       height: 4px; background: #333; border-radius: 2px; overflow: hidden; margin-top: 6px;
@@ -125,7 +134,7 @@
 </div>
 
 <div id="progress">
-  <div style="margin-bottom: 6px; color: #f5b942; font-weight: 500; text-align: center;">
+  <div id="p_hint" style="margin-bottom: 6px; color: #f5b942; font-weight: 500; text-align: center;">
     💡 等手机 CFC 弹出 <span id="p_savecount" style="color: #5fbcff; font-size: 14px;">—</span> 次"保存到哪里"对话框（每次都选同一个目录）后即可点停止
   </div>
   <div class="row">
@@ -180,11 +189,14 @@ async function sha256Hex(uint8) {
 const State = {
   file: null,
   chunks: [],          // Array<Uint8Array>
-  manifest: null,      // manifest object
-  manifestBytes: null, // Uint8Array of JSON-encoded manifest
+  manifest: null,      // manifest object (multi-chunk mode 才有, simpleMode 为 null)
+  manifestBytes: null, // Uint8Array of JSON-encoded manifest (同上)
+  simpleMode: false,   // 文件 ≤ chunk_size 时 true: 单 fountain stream + 原文件名, 无 manifest, 无需拼接
   encodeIdBase: 0,
   // streaming runtime
-  curChunkIndex: -1,   // -1 = idle, 0 = manifest, 1..N = data chunks
+  // simpleMode: curChunkIndex 0 = 唯一数据 stream
+  // multiMode:  curChunkIndex 0 = manifest, 1..N = 数据块
+  curChunkIndex: -1,
   framesInChunk: 0,
   framesNeededInChunk: 0,
   totalFramesSent: 0,
@@ -200,6 +212,43 @@ const ESTIMATED_BYTES_PER_FRAME = 7500; // Mode B default ECC payload
 
 // ============= WASM 集成 =============
 let wasmReady = false;
+let _idealRatio = 1;
+
+// 移植自 vendor/cimbar-wasm-v0.6.4/main.*.js scaleCanvas
+// 不调这个 fit 逻辑, cimbar 输出长宽比与 canvas 视觉尺寸不匹配,
+// 浏览器按 max-width/height 各自独立约束会撕裂比例, CFC 扫不到 4 角定位 marker
+function fitCanvas() {
+  const canvas = $('canvas');
+  const stage = $('stage');
+  if (!canvas || !stage) return;
+  const w = stage.clientWidth - 10;
+  const h = stage.clientHeight - 10;
+  if (w <= 0 || h <= 0) return;
+
+  const needRotate = _idealRatio > 1 && h > w;
+  if (wasmReady && Module._cimbare_rotate_window) {
+    Module._cimbare_rotate_window(needRotate);
+  }
+
+  const ourRatio = needRotate ? h / w : w / h;
+  let xdim = needRotate ? h : w;
+  let ydim = needRotate ? w : h;
+  if (ourRatio > _idealRatio) {
+    xdim = Math.floor(xdim * _idealRatio / ourRatio);
+  } else if (ourRatio < _idealRatio) {
+    ydim = Math.floor(ydim * ourRatio / _idealRatio);
+  }
+
+  if (needRotate) {
+    canvas.style.width = ydim + 'px';
+    canvas.style.height = xdim + 'px';
+  } else {
+    canvas.style.width = xdim + 'px';
+    canvas.style.height = ydim + 'px';
+  }
+}
+
+window.addEventListener('resize', fitCanvas);
 
 // Pre-define Module so the wasm glue can find it
 window.Module = {
@@ -210,6 +259,9 @@ window.Module = {
     // Mode B = 68
     Module._cimbare_configure(68, -1);
     log('Configured mode B', 'ok');
+    _idealRatio = Module._cimbare_get_aspect_ratio() || 1;
+    log('cimbar ideal aspect ratio: ' + _idealRatio.toFixed(4), 'ok');
+    fitCanvas();
     updateUiState();
   },
   print: function (text) { log('[wasm] ' + text); },
@@ -248,63 +300,123 @@ function feedAllBytes(uint8) {
   }
 }
 
-// ============= 切片与 manifest 生成 =============
-async function prepareFile(file) {
-  log(`Preparing ${file.name} (${fmtBytes(file.size)})`);
-  State.file = file;
-  $('m_filename').textContent = file.name;
-  $('m_filesize').textContent = fmtBytes(file.size);
-
-  const chunkSize = parseInt($('chunkSize').value, 10);
-  const fileBytes = new Uint8Array(await file.arrayBuffer());
-
-  // SHA256 整文件
-  const fullSha = await sha256Hex(fileBytes);
-  $('m_filehash').textContent = fullSha.substring(0, 16) + '…';
-
-  // 切片 + 每块 SHA256
-  const chunkCount = Math.ceil(file.size / chunkSize);
-  const chunks = [];
-  const chunkMeta = [];
-  for (let i = 0; i < chunkCount; i++) {
-    const start = i * chunkSize;
-    const end = Math.min(start + chunkSize, file.size);
-    const slice = fileBytes.subarray(start, end);
-    const sha = await sha256Hex(slice);
-    chunks.push(slice);
-    chunkMeta.push({ index: i, size: slice.length, sha256: sha });
+// 根据当前 State (simpleMode / chunks / manifestBytes / redundancy) 同步 UI 文案 + 重算 totalFramesNeeded.
+// prepareFile 末尾 + startTransmission 开头都调一次, 双重兜底 race condition (两次 prepareFile 交叉时
+// State 字段可能部分覆盖, 这里强制根据当前 State 重新派生所有依赖值).
+function applyMode() {
+  if (State.chunks.length === 0) return;
+  const r = State.redundancy || 1.5;
+  if (State.simpleMode) {
+    $('m_chunkcount').textContent = `1 个文件 (原文件直发, 无需拼接)`;
+    // 注意: 不能引用 p_savecount, 因为下面的 innerHTML 替换会删掉它 (它是 p_hint 的子节点),
+    // 第二次调 applyMode 时 $('p_savecount') 就 null 了
+    $('p_hint').innerHTML = '💡 手机 CFC 会保存 <b style="color:#5fbcff">1 个文件</b>, 文件名即原文件名, 无需拼接 — 等 CFC 弹出"保存到哪里"对话框并保存后即可点停止';
+    State.totalFramesNeeded = framesNeededFor(State.chunks[0].length, r);
+  } else {
+    const n = State.chunks.length;
+    $('m_chunkcount').textContent = `${n + 1} 个文件 (1 manifest.json + ${n} 数据块)`;
+    $('p_hint').innerHTML = '💡 等手机 CFC 弹出 <span style="color:#5fbcff;font-size:14px;">' + (n + 1) + '</span> 次"保存到哪里"对话框（每次都选同一个目录）后即可点停止';
+    let total = framesNeededFor(State.manifestBytes.length, r);
+    for (const c of State.chunks) total += framesNeededFor(c.length, r);
+    State.totalFramesNeeded = total;
   }
-  State.chunks = chunks;
-  $('m_chunkcount').textContent = `${chunkCount + 1} 个文件 (1 manifest.json + ${chunkCount} 数据块)`;
+}
 
-  // encode_id_base：时间戳低 16 位
-  State.encodeIdBase = Math.floor(Date.now() / 1000) & 0xFFFF;
-  $('m_encodeid').textContent = State.encodeIdBase;
+// ============= 切片与 manifest 生成 =============
+let _preparing = false;
+async function prepareFile(file) {
+  // 串行化: 防止用户连续拖文件时两次 prepareFile 在 await 间交叉, 导致 State 字段错乱
+  if (_preparing) {
+    log(`Ignored "${file.name}": still preparing previous file. Try again after current finishes.`, 'err');
+    // dropzone 边框闪红 600ms 给用户视觉反馈 (log 面板默认隐藏, 用户看不到 log)
+    const dz = $('dropzone');
+    const oldBorder = dz.style.borderColor;
+    dz.style.borderColor = '#e74c3c';
+    setTimeout(() => { dz.style.borderColor = oldBorder; }, 600);
+    return;
+  }
+  _preparing = true;
+  try {
+    // 失败兜底 + race 防御: 任何后续 await 抛出, 或 await 期间 window-drop handler 先调
+    // stopTransmission 让 btnStart 重启, 此时 State.chunks 必须先被清空, 防止用户用旧 chunks 启动新传输
+    State.chunks = [];
+    State.manifest = null;
+    State.manifestBytes = null;
+    State.file = null;
+    State.simpleMode = false;
+    $('btnStart').disabled = true;
 
-  // manifest
-  State.manifest = {
-    version: 1,
-    tool: 'cimbar-bigfile',
-    filename: file.name,
-    total_size: file.size,
-    sha256: fullSha,
-    chunk_size: chunkSize,
-    chunk_count: chunkCount,
-    encode_id_base: State.encodeIdBase,
-    chunks: chunkMeta,
-  };
-  State.manifestBytes = new TextEncoder().encode(JSON.stringify(State.manifest));
-  $('p_savecount').textContent = `${chunkCount + 1}`;
-  log(`Sliced into ${chunkCount} chunks, manifest = ${State.manifestBytes.length} bytes`, 'ok');
+    log(`Preparing ${file.name} (${fmtBytes(file.size)})`);
+    State.file = file;
+    $('m_filename').textContent = file.name;
+    $('m_filesize').textContent = fmtBytes(file.size);
 
-  // 估算总帧数
-  const redundancy = parseFloat($('redundancy').value) || 1.5;
-  State.redundancy = redundancy;
-  let totalFrames = framesNeededFor(State.manifestBytes.length, redundancy);
-  for (const c of chunks) totalFrames += framesNeededFor(c.length, redundancy);
-  State.totalFramesNeeded = totalFrames;
+    const chunkSize = parseInt($('chunkSize').value, 10);
+    const fileBytes = new Uint8Array(await file.arrayBuffer());
 
-  updateUiState();
+    // SHA256 整文件 (UI 展示, simpleMode 不嵌 manifest 但 UI 仍显示)
+    const fullSha = await sha256Hex(fileBytes);
+    $('m_filehash').textContent = fullSha.substring(0, 16) + '…';
+
+    // encode_id_base: 时间戳低 16 位 (两种模式共用)
+    State.encodeIdBase = Math.floor(Date.now() / 1000) & 0xFFFF;
+    $('m_encodeid').textContent = State.encodeIdBase;
+
+    State.simpleMode = (file.size <= chunkSize);
+    State.redundancy = parseFloat($('redundancy').value) || 1.5;
+
+    if (State.simpleMode) {
+      // 单文件直发模式: 1 个 fountain stream, 用原文件名, 无 manifest, CFC 落盘即原文件
+      State.chunks = [fileBytes];
+      State.manifest = null;
+      State.manifestBytes = null;
+      log(`Simple mode: single fountain stream, filename "${file.name}", no manifest`, 'ok');
+    } else {
+      // 多块模式: 切片 + 每块 SHA256 + manifest
+      const chunkCount = Math.ceil(file.size / chunkSize);
+      const chunks = [];
+      const chunkMeta = [];
+      for (let i = 0; i < chunkCount; i++) {
+        const start = i * chunkSize;
+        const end = Math.min(start + chunkSize, file.size);
+        const slice = fileBytes.subarray(start, end);
+        const sha = await sha256Hex(slice);
+        chunks.push(slice);
+        chunkMeta.push({ index: i, size: slice.length, sha256: sha });
+      }
+      State.chunks = chunks;
+      State.manifest = {
+        version: 1,
+        tool: 'cimbar-bigfile',
+        filename: file.name,
+        total_size: file.size,
+        sha256: fullSha,
+        chunk_size: chunkSize,
+        chunk_count: chunkCount,
+        encode_id_base: State.encodeIdBase,
+        chunks: chunkMeta,
+      };
+      State.manifestBytes = new TextEncoder().encode(JSON.stringify(State.manifest));
+      log(`Sliced into ${chunkCount} chunks, manifest = ${State.manifestBytes.length} bytes`, 'ok');
+    }
+
+    applyMode();   // 同步 UI 文案 + 计算 totalFramesNeeded
+  } catch (err) {
+    // OOM / arrayBuffer 失败等异常 — 把 UI 一起 reset, 避免半截信息让用户误以为加载成功
+    log(`Failed to prepare "${file.name}": ${(err && err.message) || err}`, 'err');
+    State.chunks = [];
+    State.manifest = null;
+    State.manifestBytes = null;
+    State.file = null;
+    $('m_filename').textContent = '—';
+    $('m_filesize').textContent = '—';
+    $('m_filehash').textContent = '—';
+    $('m_chunkcount').textContent = '—';
+    $('m_encodeid').textContent = '—';
+  } finally {
+    _preparing = false;
+    updateUiState();
+  }
 }
 
 function framesNeededFor(byteCount, redundancy) {
@@ -313,8 +425,8 @@ function framesNeededFor(byteCount, redundancy) {
 
 // ============= 主循环 =============
 function startTransmission() {
-  if (!wasmReady || !State.manifest) {
-    log('Cannot start: wasm or manifest not ready', 'err');
+  if (!wasmReady || State.chunks.length === 0) {
+    log('Cannot start: wasm or file not ready', 'err');
     return;
   }
   State.active = true;
@@ -325,12 +437,16 @@ function startTransmission() {
   State.lastUiUpdate = 0;
   State.interval = Math.floor(1000 / (parseInt($('fps').value, 10) || 15));
   State.redundancy = parseFloat($('redundancy').value) || 1.5;
+  applyMode();   // 兜底重设 UI + 用最新 redundancy 重算 totalFramesNeeded
+  $('canvas').style.visibility = 'visible';
   $('dropzone').classList.add('hidden');
   $('progress').classList.add('active');
   $('btnStart').disabled = true;
   $('btnStop').disabled = false;
   $('chunkSize').disabled = true;
-  log(`Starting transmission, interval=${State.interval}ms, redundancy=${State.redundancy}x`, 'ok');
+  // progress 显示后 stage 高度变化, canvas 必须重新 fit, 否则底部 marker 被遮挡 → CFC 扫不到
+  requestAnimationFrame(fitCanvas);
+  log(`Starting transmission, interval=${State.interval}ms, redundancy=${State.redundancy}x, mode=${State.simpleMode ? 'simple' : 'multi'}`, 'ok');
   advanceToNextChunk();
   scheduleNextFrame();
 }
@@ -341,22 +457,40 @@ function stopTransmission() {
     clearTimeout(State.timer);
     State.timer = null;
   }
-  $('btnStart').disabled = false;
   $('btnStop').disabled = true;
   $('chunkSize').disabled = false;
-  log('Stopped', 'ok');
+  // 显回 dropzone, 用户可以拖新文件; canvas 隐藏防止旧码图穿过 dropzone margin 露出来
+  $('canvas').style.visibility = 'hidden';
+  $('dropzone').classList.remove('hidden');
+  $('progress').classList.remove('active');
+  requestAnimationFrame(fitCanvas);
+  updateUiState();
+  log('Stopped. 拖入新文件换文件, 或再点开始继续当前文件', 'ok');
 }
 
 function advanceToNextChunk() {
   State.curChunkIndex += 1;
   State.framesInChunk = 0;
 
-  const total = 1 + State.chunks.length; // 1 manifest + N data chunks
+  if (State.simpleMode) {
+    // 单文件模式: 只 1 个 stream, 反复循环用原文件名
+    if (State.curChunkIndex >= 1) {
+      State.loopCount = (State.loopCount || 0) + 1;
+      log(`Single-file stream sent ${State.loopCount}× round(s). Looping.`, 'ok');
+      State.curChunkIndex = 0;
+    }
+    const chunk = State.chunks[0];
+    callInitEncode(State.file.name, State.encodeIdBase + 0);
+    feedAllBytes(chunk);
+    State.framesNeededInChunk = framesNeededFor(chunk.length, State.redundancy);
+    log(`>>> Sending "${State.file.name}" (${fmtBytes(chunk.length)}, ~${State.framesNeededInChunk} frames, simple mode)`, 'ok');
+    return;
+  }
+
+  // 多块模式: 0 = manifest, 1..N = data chunks
+  const total = 1 + State.chunks.length;
   if (State.curChunkIndex >= total) {
-    // All streams sent at least once. Loop back to manifest (index 0).
-    // Critical: manifest MUST be in the loop so a late receiver can still capture it.
-    // CFC's fountain_decoder_sink keeps adding new frames to a stream until it's complete,
-    // so re-running init_encode with the same encode_id continues the same stream from CFC's view.
+    // 关键: manifest 必须在循环里, 晚到的 CFC 才能拿到 manifest 识别 chunk 命名
     State.loopCount = (State.loopCount || 0) + 1;
     log(`All streams sent ${State.loopCount}× round(s). Looping back to manifest.`, 'ok');
     State.curChunkIndex = 0;
@@ -364,7 +498,6 @@ function advanceToNextChunk() {
   }
 
   if (State.curChunkIndex === 0) {
-    // manifest
     callInitEncode('manifest.json', State.encodeIdBase + 0);
     feedAllBytes(State.manifestBytes);
     State.framesNeededInChunk = framesNeededFor(State.manifestBytes.length, State.redundancy);
@@ -415,14 +548,19 @@ function scheduleNextFrame() {
 
 // ============= UI =============
 function updateUiState() {
-  const ready = wasmReady && State.manifest !== null;
+  const ready = wasmReady && State.chunks.length > 0;
   $('btnStart').disabled = !ready || State.active;
 }
 
 function updateProgressUI() {
-  const curHuman = State.curChunkIndex === 0
-    ? `manifest${State.loopCount > 0 ? ` (第 ${State.loopCount + 1} 轮)` : ''}`
-    : `${State.curChunkIndex}/${State.chunks.length}${State.loopCount > 0 ? ` (第 ${State.loopCount + 1} 轮)` : ''}`;
+  let curHuman;
+  if (State.simpleMode) {
+    curHuman = `1/1${State.loopCount > 0 ? ` (第 ${State.loopCount + 1} 轮)` : ''}`;
+  } else if (State.curChunkIndex === 0) {
+    curHuman = `manifest${State.loopCount > 0 ? ` (第 ${State.loopCount + 1} 轮)` : ''}`;
+  } else {
+    curHuman = `${State.curChunkIndex}/${State.chunks.length}${State.loopCount > 0 ? ` (第 ${State.loopCount + 1} 轮)` : ''}`;
+  }
   $('p_chunk').textContent = curHuman;
   $('p_frame').textContent = `${State.framesInChunk}/${State.framesNeededInChunk}`;
 
@@ -470,9 +608,22 @@ $('btnStart').addEventListener('click', startTransmission);
 $('btnStop').addEventListener('click', stopTransmission);
 $('btnDebug').addEventListener('click', () => $('log').classList.toggle('active'));
 
-// 防止整页拖拽默认行为
+// 全局 dragover 防止浏览器把文件当 URL 打开
 window.addEventListener('dragover', (e) => e.preventDefault());
-window.addEventListener('drop', (e) => e.preventDefault());
+// 全局 drop 兜底: dropzone 可见时它自己处理 (事件冒泡到 window 时直接跳过);
+// dropzone 隐藏 (传输中) 时, 用户拖文件直接接管: 自动停 + 加载新文件
+window.addEventListener('drop', async (e) => {
+  e.preventDefault();
+  if (!$('dropzone').classList.contains('hidden')) return;
+  const f = e.dataTransfer.files[0];
+  if (!f) return;
+  if (State.active) {
+    stopTransmission();
+    log('Auto-stopped previous transmission to load new file', 'ok');
+  }
+  await prepareFile(f);
+  log(`Loaded "${f.name}" (${fmtBytes(f.size)}). Click 开始传输 to start.`, 'ok');
+});
 
 log('Page loaded, waiting for wasm runtime...');
 </script>
