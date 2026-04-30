@@ -517,6 +517,48 @@ function stopTransmission() {
   log('Stopped. 拖入新文件换文件, 或再点开始继续当前文件', 'ok');
 }
 
+// ============= 跳转按钮组 (multi 模式专用) =============
+// 用户在保存了某 chunk 后, 主动点下一个目标 chunk 让发送方专心播放它,
+// 让 CFC 扫到的必然是目标 chunk, 消除随机扫描等待.
+// simpleMode 下整个按钮组隐藏 (单 stream 跳转无意义).
+function renderJumpButtons() {
+  const bar = $('chunkJumpBar');
+  if (State.simpleMode || State.chunks.length === 0) {
+    bar.classList.remove('visible');
+    bar.innerHTML = '';
+    return;
+  }
+  const total = 1 + State.chunks.length;       // 0 = manifest, 1..N = 数据块
+  const padW = State.chunks.length < 100 ? 2 : (State.chunks.length < 1000 ? 3 : 4);
+  const parts = ['<span class="label">跳转:</span>'];
+  for (let i = 0; i < total; i++) {
+    const text = i === 0 ? 'manifest' : `part${String(i - 1).padStart(padW, '0')}`;
+    const dis = State.active ? '' : ' disabled';
+    parts.push(`<button type="button" data-idx="${i}"${dis}>${text}</button>`);
+  }
+  bar.innerHTML = parts.join('');
+  bar.classList.add('visible');
+  bar.querySelectorAll('button[data-idx]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      setJumpTarget(parseInt(btn.dataset.idx, 10));
+    });
+  });
+}
+
+function setJumpTarget(idx) {
+  if (!State.active) return;
+  State.jumpRequested = idx;
+  log(`Jump request: chunk ${idx}`, 'ok');
+  highlightActiveJumpBtn(idx);
+}
+
+function highlightActiveJumpBtn(idx) {
+  const bar = $('chunkJumpBar');
+  bar.querySelectorAll('button[data-idx]').forEach(btn => {
+    btn.classList.toggle('active', parseInt(btn.dataset.idx, 10) === idx);
+  });
+}
+
 function advanceToNextChunk() {
   State.curChunkIndex += 1;
   State.framesInChunk = 0;
