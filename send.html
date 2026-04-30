@@ -133,6 +133,8 @@
   <canvas id="canvas"></canvas>
 </div>
 
+<div id="chunkJumpBar"></div>
+
 <div id="progress">
   <div id="p_hint" style="margin-bottom: 6px; color: #f5b942; font-weight: 500; text-align: center;">
     💡 等手机 CFC 弹出 <span id="p_savecount" style="color: #5fbcff; font-size: 14px;">—</span> 次"保存到哪里"对话框（每次都选同一个目录）后即可点停止
@@ -206,6 +208,9 @@ const State = {
   redundancy: 1.5,
   active: false,
   timer: null,
+  // 用户主动跳转目标 chunk 索引 (multiMode: 0 = manifest, 1..N = 数据块).
+  // 非 null 时 advanceToNextChunk 顶部消费一次后立即清空, 防止下一帧重复跳转.
+  jumpRequested: null,
 };
 
 const ESTIMATED_BYTES_PER_FRAME = 7500; // Mode B default ECC payload
