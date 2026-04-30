@@ -560,6 +560,17 @@ function highlightActiveJumpBtn(idx) {
 }
 
 function advanceToNextChunk() {
+  // 跳转处理: 用户点了某 chunk 按钮 → 强制把 curChunkIndex 设为 target-1,
+  // 让下一行 += 1 自然命中 target. simpleMode 下按钮组隐藏不可能触发, 但仍兜底清空.
+  if (State.jumpRequested !== null) {
+    if (!State.simpleMode) {
+      const target = State.jumpRequested;
+      State.curChunkIndex = target - 1;
+      log(`>>> Jumping to chunk index ${target}`, 'ok');
+    }
+    State.jumpRequested = null;
+  }
+
   State.curChunkIndex += 1;
   State.framesInChunk = 0;
 
@@ -604,6 +615,9 @@ function advanceToNextChunk() {
     State.framesNeededInChunk = framesNeededFor(chunk.length, State.redundancy);
     log(`>>> Chunk ${dataIdx + 1}/${State.chunks.length} "${partName}" (${fmtBytes(chunk.length)}, ~${State.framesNeededInChunk} frames)`, 'ok');
   }
+
+  // 按钮组高亮跟随当前 chunk (跳转 / 自然推进 / 循环回 manifest 三种情况都同步)
+  highlightActiveJumpBtn(State.curChunkIndex);
 }
 
 function stripExt(filename) {
