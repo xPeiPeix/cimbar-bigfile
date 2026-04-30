@@ -82,6 +82,50 @@
     #progress .label { color: #aaa; }
     #progress .value { color: #5fbcff; font-weight: 500; }
 
+    /* chunkJumpBar — 用户主动跳转目标 chunk 的按钮组 (multi 模式专用).
+       默认 display:none 不占布局; 多块文件加载后 .visible 切成 flex 显示.
+       max-height + overflow-y: chunk 数极多时 (如 500MB → 50 个按钮) 不撑爆页面. */
+    #chunkJumpBar {
+      flex-shrink: 0;
+      background: rgba(0,0,0,0.5);
+      padding: 6px 16px;
+      display: none;
+      flex-wrap: wrap;
+      gap: 4px;
+      align-items: center;
+      max-height: 90px;
+      overflow-y: auto;
+      border-top: 1px solid #333;
+    }
+    #chunkJumpBar.visible { display: flex; }
+    #chunkJumpBar .label { color: #888; font-size: 11px; margin-right: 4px; }
+    #chunkJumpBar button {
+      padding: 4px 10px;
+      font-size: 11px;
+      background: #2a2a3e;
+      color: #ccc;
+      border: 1px solid #444;
+      border-radius: 3px;
+      cursor: pointer;
+      white-space: nowrap;
+      font-family: inherit;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    #chunkJumpBar button:hover:not(:disabled) {
+      background: #3a3a5e;
+      border-color: #5fbcff;
+    }
+    #chunkJumpBar button.active {
+      background: #4a90e2;
+      color: #fff;
+      border-color: #5fbcff;
+      font-weight: 600;
+    }
+    #chunkJumpBar button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
     #log {
       position: absolute; top: 60px; right: 16px;
       max-width: 320px; max-height: 200px; overflow-y: auto;
@@ -132,6 +176,8 @@
   </div>
   <canvas id="canvas"></canvas>
 </div>
+
+<div id="chunkJumpBar"></div>
 
 <div id="progress">
   <div id="p_hint" style="margin-bottom: 6px; color: #f5b942; font-weight: 500; text-align: center;">
@@ -206,6 +252,9 @@ const State = {
   redundancy: 1.5,
   active: false,
   timer: null,
+  // 用户主动跳转目标 chunk 索引 (multiMode: 0 = manifest, 1..N = 数据块).
+  // 非 null 时 advanceToNextChunk 顶部消费一次后立即清空, 防止下一帧重复跳转.
+  jumpRequested: null,
 };
 
 const ESTIMATED_BYTES_PER_FRAME = 7500; // Mode B default ECC payload
@@ -320,6 +369,8 @@ function applyMode() {
     for (const c of State.chunks) total += framesNeededFor(c.length, r);
     State.totalFramesNeeded = total;
   }
+  // 按钮组随 simpleMode/chunks 变化重渲染 (active 状态由 State.active 决定 disabled)
+  renderJumpButtons();
 }
 
 // ============= 切片与 manifest 生成 =============
@@ -344,6 +395,7 @@ async function prepareFile(file) {
     State.manifestBytes = null;
     State.file = null;
     State.simpleMode = false;
+    State.jumpRequested = null;
     $('btnStart').disabled = true;
 
     log(`Preparing ${file.name} (${fmtBytes(file.size)})`);
@@ -432,12 +484,13 @@ function startTransmission() {
   State.active = true;
   State.startTime = performance.now();
   State.curChunkIndex = -1;
+  State.jumpRequested = null;
   State.totalFramesSent = 0;
   State.loopCount = 0;
   State.lastUiUpdate = 0;
   State.interval = Math.floor(1000 / (parseInt($('fps').value, 10) || 15));
   State.redundancy = parseFloat($('redundancy').value) || 1.5;
-  applyMode();   // 兜底重设 UI + 用最新 redundancy 重算 totalFramesNeeded
+  applyMode();   // 兜底重设 UI + 用最新 redundancy 重算 totalFramesNeeded; 同时 renderJumpButtons 用 active=true 渲染可点击按钮
   $('canvas').style.visibility = 'visible';
   $('dropzone').classList.add('hidden');
   $('progress').classList.add('active');
@@ -453,6 +506,7 @@ function startTransmission() {
 
 function stopTransmission() {
   State.active = false;
+  State.jumpRequested = null;
   if (State.timer) {
     clearTimeout(State.timer);
     State.timer = null;
@@ -464,11 +518,66 @@ function stopTransmission() {
   $('dropzone').classList.remove('hidden');
   $('progress').classList.remove('active');
   requestAnimationFrame(fitCanvas);
+  // 重渲按钮组让其变 disabled 样式 (State.active=false 已经设置)
+  renderJumpButtons();
   updateUiState();
   log('Stopped. 拖入新文件换文件, 或再点开始继续当前文件', 'ok');
 }
 
+// ============= 跳转按钮组 (multi 模式专用) =============
+// 用户在保存了某 chunk 后, 主动点下一个目标 chunk 让发送方专心播放它,
+// 让 CFC 扫到的必然是目标 chunk, 消除随机扫描等待.
+// simpleMode 下整个按钮组隐藏 (单 stream 跳转无意义).
+function renderJumpButtons() {
+  const bar = $('chunkJumpBar');
+  if (State.simpleMode || State.chunks.length === 0) {
+    bar.classList.remove('visible');
+    bar.innerHTML = '';
+    return;
+  }
+  const total = 1 + State.chunks.length;       // 0 = manifest, 1..N = 数据块
+  const padW = State.chunks.length < 100 ? 2 : (State.chunks.length < 1000 ? 3 : 4);
+  const parts = ['<span class="label">跳转:</span>'];
+  for (let i = 0; i < total; i++) {
+    const text = i === 0 ? 'manifest' : `part${String(i - 1).padStart(padW, '0')}`;
+    const dis = State.active ? '' : ' disabled';
+    parts.push(`<button type="button" data-idx="${i}"${dis}>${text}</button>`);
+  }
+  bar.innerHTML = parts.join('');
+  bar.classList.add('visible');
+  bar.querySelectorAll('button[data-idx]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      setJumpTarget(parseInt(btn.dataset.idx, 10));
+    });
+  });
+}
+
+function setJumpTarget(idx) {
+  if (!State.active) return;
+  State.jumpRequested = idx;
+  log(`Jump request: chunk ${idx}`, 'ok');
+  highlightActiveJumpBtn(idx);
+}
+
+function highlightActiveJumpBtn(idx) {
+  const bar = $('chunkJumpBar');
+  bar.querySelectorAll('button[data-idx]').forEach(btn => {
+    btn.classList.toggle('active', parseInt(btn.dataset.idx, 10) === idx);
+  });
+}
+
 function advanceToNextChunk() {
+  // 跳转处理: 用户点了某 chunk 按钮 → 强制把 curChunkIndex 设为 target-1,
+  // 让下一行 += 1 自然命中 target. simpleMode 下按钮组隐藏不可能触发, 但仍兜底清空.
+  if (State.jumpRequested !== null) {
+    if (!State.simpleMode) {
+      const target = State.jumpRequested;
+      State.curChunkIndex = target - 1;
+      log(`>>> Jumping to chunk index ${target}`, 'ok');
+    }
+    State.jumpRequested = null;
+  }
+
   State.curChunkIndex += 1;
   State.framesInChunk = 0;
 
@@ -513,6 +622,9 @@ function advanceToNextChunk() {
     State.framesNeededInChunk = framesNeededFor(chunk.length, State.redundancy);
     log(`>>> Chunk ${dataIdx + 1}/${State.chunks.length} "${partName}" (${fmtBytes(chunk.length)}, ~${State.framesNeededInChunk} frames)`, 'ok');
   }
+
+  // 按钮组高亮跟随当前 chunk (跳转 / 自然推进 / 循环回 manifest 三种情况都同步)
+  highlightActiveJumpBtn(State.curChunkIndex);
 }
 
 function stripExt(filename) {
