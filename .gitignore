@@ -29,6 +29,9 @@ yarn-debug.log*
 # Playwright CLI session cache (snapshots / console logs)
 .playwright-cli/
 
+# AI workflow internals (Ralph Loop / task TODOs)
+.todos/
+
 # Node / build artifacts (预留)
 node_modules/
 dist/

@@ -78,35 +78,23 @@
 
 ## 性能参考
 
-测试环境：1080p 屏幕 + Pixel 5 + 默认参数（Mode B / 15 fps / 10 MB 块 / 1.5x 冗余）
+参考环境：1080p 屏幕 + Pixel 5 + 默认参数（Mode B / 15 fps / 10 MB 块 / 1.5x 冗余）
 
-| 文件大小 | 块数 | 弹窗次数 | 预估耗时 | 实测吞吐 |
-|---------|------|---------|---------|---------|
+| 文件大小 | 块数 | 弹窗次数 | 预估耗时 | 参考吞吐 (Mode B) |
+|---------|------|---------|---------|-------------------|
 | 5 MB | 1 块（直发，无 manifest） | 1 次 | ~1 分钟 | ~85 KB/s |
-| 30 MB | 3 块 | 4 次（manifest + 3 块） | ~5 分钟 | ~100 KB/s |
+| 28 MB | 3 块 | 4 次（manifest + 3 块） | ~4-5 分钟 | ~100 KB/s |
 | 100 MB | 10 块 | 11 次（manifest + 10 块） | ~16-20 分钟 | ~106 KB/s |
-| 500 MB | 50 块 | 51 次（manifest + 50 块） | ~80-100 分钟 | ~106 KB/s |
 
+> 验证覆盖：5 MB（bundled `test/test-5m.bin`）+ ~28 MB（手动光学链路 end-to-end）+ 100 MB（应用层 round-trip via `scripts/test-round-trip-100mb.js`）。其他规模线性外推。
+>
 > 实际吞吐受光线、屏幕亮度、相机自动对焦稳定性影响很大。
 
 ## 开发
 
 ### 更新 libcimbar 依赖
 
-```bash
-cd vendor/
-rm -rf cimbar-wasm-v*/ cimbar_js.html cimbar.wasm.tar.gz
-
-gh release download vX.Y.Z --repo sz3/libcimbar \
-  --pattern 'cimbar_js.html' \
-  --pattern 'cimbar.wasm.tar.gz' \
-  --dir .
-
-tar -xzf cimbar.wasm.tar.gz
-mv <timestamped-dir>/ cimbar-wasm-vX.Y.Z/
-```
-
-然后更新 `vendor/README.md` 的版本号 + 检查 wasm 导出 API 是否变化（看 `main.*.js`），必要时同步更新 `send.html` 的 wasm 调用代码。
+详见 [`vendor/README.md` 的 "Updating to newer libcimbar release" 章节](vendor/README.md#updating-to-newer-libcimbar-release)。
 
 ### 协议规范
 
