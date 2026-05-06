@@ -70,10 +70,6 @@ Based on inspection of `recv.2026-01-20T0312.js`:
 | `_cimbard_get_filesize(id)` | Returns size of completed file (id = fountain encode_id) |
 | `_cimbard_get_filename(id, bufPtr, maxLen)` | Writes ZSTD-header-embedded filename UTF-8 bytes to buffer; returns length |
 
-**Important discovery**: The v0.6.4 release **DOES include a working web decoder** (contrary to older deepwiki info). The decoder uses 4 web workers (`recv-worker.2026-01-20T0312.js`) for barcode extraction, main thread runs fountain decode, and supports auto mode detection. Multiple concurrent fountain streams are tracked by encode_id natively.
-
-This means an alternative receiver path is possible: host `recv.html` on a phone browser instead of installing the CFC Android app. Pros: no install, cross-platform. Cons: requires HTTPS for getUserMedia, browser performance < native CFC. Tracked as future direction in `../ROADMAP.md`.
-
 ## Updating to newer libcimbar release
 
 ```bash
