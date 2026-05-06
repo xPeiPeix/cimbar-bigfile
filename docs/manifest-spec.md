@@ -72,8 +72,8 @@ const encode_id_base = Math.floor(Date.now() / 1000) & 0xFFFF;
 
 **约束**：
 - 每个会话内的 `encode_id_base + i` (i ∈ [0, chunk_count]) 不能与同时进行的另一会话碰撞
-- libcimbar wasm 的 `_cimbare_init_encode` 第三参数接受 `int32`，但实际 fountain metadata 字段宽度建议查 `FountainMetadata.h`，**实际范围保守按 16 位** 用
-- 单次最大 `chunk_count` 因此约束在 ~32000 块以内（远超实用需求）
+- libcimbar wasm 的 `_cimbare_init_encode` 第三参数接受 `int32`，但**实际 wirehair fountain decoder 每 ~128 个 transfer 后会循环复用 encode_id slot**（详见 [sz3/libcimbar#149](https://github.com/sz3/libcimbar/issues/149)）
+- 单次会话 `chunk_count` 因此应保守约束在 **~120 块以内**（即 ~1.2 GB at 10MB/chunk 的实用上限）。超过此值后 CFC 端 wirehair 解码器会忽略循环后重复 encode_id 的数据
 
 **碰撞处理**：CFC 一旦有同 encode_id 的两个不同文件先后出现，行为未定义（可能合并、可能丢失）。开始新传输前请等待前一传输全部完成或重启 CFC。
 
