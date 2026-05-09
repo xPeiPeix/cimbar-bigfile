@@ -60,7 +60,7 @@
 
 ## 已知限制
 
-- **每块完成 CFC 弹一次保存对话框**：10MB / 块时，100MB 文件需要点 11 次"保存"。详见 [ROADMAP.md](ROADMAP.md) Plan B 优化方案。
+- **每块完成 CFC 弹一次保存对话框**：10MB / 块时，100MB 文件需要点 11 次"保存"。
 - **吞吐量**：约 **106 KB/s**（libcimbar Mode B 默认）。100MB 文件预计耗时 16-20 分钟。
 - **接收端目前只能用 Android CFC**：libcimbar web 端没有解码器。
 
@@ -76,7 +76,6 @@
 | 文件名乱码 | 系统字符编码问题 | manifest 强制 UTF-8，检查浏览器/手机系统编码 |
 | 浏览器卡顿 | 文件太大 wasm 堆压力 | 降低单块大小（默认 10MB → 5MB） |
 | 总扫描时间太长 | CFC 每次保存重置 fountain 状态，发送方循环导致命中靠运气 | 用新加的「跳转按钮」主动指定下一个目标 chunk（见上方"加速接收"段） |
-| Android 保存对话框点烦了 | 块数太多 | 见 [ROADMAP.md](ROADMAP.md) Plan B（fork CFC 加批量保存模式） |
 
 ## 性能参考
 
@@ -126,7 +125,6 @@ PYTHONIOENCODING=utf-8 PYTHONUTF8=1 python scripts/build-standalone.py
 
 - 协议规范：[docs/manifest-spec.md](docs/manifest-spec.md)
 - 架构图：[docs/architecture.md](docs/architecture.md)
-- 未来方向：[ROADMAP.md](ROADMAP.md)
 
 ## License & Acknowledgements
 

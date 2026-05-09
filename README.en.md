@@ -60,7 +60,7 @@ The default sender behavior cycles `manifest → part00 → part01 → ... → l
 
 ## Known limitations
 
-- **CFC pops up a save dialog per chunk**: at 10MB / chunk, a 100MB file requires 11 "save" taps. See [ROADMAP.md](ROADMAP.md) Plan B for the optimization path.
+- **CFC pops up a save dialog per chunk**: at 10MB / chunk, a 100MB file requires 11 "save" taps.
 - **Throughput**: about **106 KB/s** (libcimbar Mode B default). 100MB files take an estimated 16-20 minutes.
 - **Receiver currently Android CFC only**: libcimbar's web side has no decoder.
 
@@ -76,7 +76,6 @@ The default sender behavior cycles `manifest → part00 → part01 → ... → l
 | Garbled filename | System encoding mismatch | manifest enforces UTF-8 — check browser/phone system encoding |
 | Browser stutters | File too big, wasm heap pressure | Lower the chunk size (default 10MB → 5MB) |
 | Total scan time too long | CFC resets fountain state per save, so the sender's looping makes hits luck-based | Use the new "jump buttons" to manually pin the next target chunk (see "Speed up reception" above) |
-| Tired of Android save dialogs | Too many chunks | See [ROADMAP.md](ROADMAP.md) Plan B (fork CFC to add a batch-save mode) |
 
 ## Performance reference
 
@@ -126,7 +125,6 @@ The build script reads only `send.html` + `vendor/cimbar-wasm-v0.6.4/cimbar_js.*
 
 - Protocol spec: [docs/manifest-spec.md](docs/manifest-spec.md)
 - Architecture diagram: [docs/architecture.md](docs/architecture.md)
-- Future directions: [ROADMAP.md](ROADMAP.md)
 
 ## License & Acknowledgements
 

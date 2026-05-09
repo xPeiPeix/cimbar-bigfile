@@ -43,3 +43,6 @@ build/
 .env
 .env.local
 *.secret.*
+
+# Internal-only roadmap (kept locally in .todos/, never published)
+ROADMAP.md
