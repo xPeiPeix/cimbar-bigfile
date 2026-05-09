@@ -1,5 +1,7 @@
 **中文** | [English](README.en.md)
 
+🚀 **在线试用**：[发送端](https://xpeipeix.github.io/cimbar-bigfile/send.standalone.html) · [拼接端](https://xpeipeix.github.io/cimbar-bigfile/reassemble.html) · [离线下载](https://github.com/xPeiPeix/cimbar-bigfile/releases/latest)
+
 # cimbar-bigfile
 
 > 基于 [sz3/libcimbar](https://github.com/sz3/libcimbar) 的大文件光学传输工具——突破 ~10MB 单次稳定上限，无网络环境下传输任意大小文件。

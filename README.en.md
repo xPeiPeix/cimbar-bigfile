@@ -1,5 +1,7 @@
 [中文](README.md) | **English**
 
+🚀 **Try online**: [Sender](https://xpeipeix.github.io/cimbar-bigfile/send.standalone.html) · [Reassemble](https://xpeipeix.github.io/cimbar-bigfile/reassemble.html) · [Offline download](https://github.com/xPeiPeix/cimbar-bigfile/releases/latest)
+
 # cimbar-bigfile
 
 > An optical large-file transfer tool built on top of [sz3/libcimbar](https://github.com/sz3/libcimbar) — break past the ~10MB single-shot stable cap and move arbitrarily large files in fully air-gapped environments.
