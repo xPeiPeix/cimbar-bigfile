@@ -1,3 +1,5 @@
+**中文** | [English](README.en.md)
+
 # cimbar-bigfile
 
 > 基于 [sz3/libcimbar](https://github.com/sz3/libcimbar) 的大文件光学传输工具——突破 ~10MB 单次稳定上限，无网络环境下传输任意大小文件。
