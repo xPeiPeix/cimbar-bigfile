@@ -84,7 +84,8 @@
 
     /* chunkJumpBar — 用户主动跳转目标 chunk 的按钮组 (multi 模式专用).
        默认 display:none 不占布局; 多块文件加载后 .visible 切成 flex 显示.
-       max-height + overflow-y: chunk 数极多时 (如 500MB → 50 个按钮) 不撑爆页面. */
+       max-height + overflow-y: chunk 数极多时 (如 500MB → 50 个按钮) 不撑爆页面.
+       按钮 min-width 让多块时网格化排列, 不会出现 manifest/part00 长短不齐. */
     #chunkJumpBar {
       flex-shrink: 0;
       background: rgba(0,0,0,0.5);
@@ -93,7 +94,7 @@
       flex-wrap: wrap;
       gap: 4px;
       align-items: center;
-      max-height: 90px;
+      max-height: 120px;
       overflow-y: auto;
       border-top: 1px solid #333;
     }
@@ -101,6 +102,7 @@
     #chunkJumpBar .label { color: #888; font-size: 11px; margin-right: 4px; }
     #chunkJumpBar button {
       padding: 4px 10px;
+      min-width: 78px;
       font-size: 11px;
       background: #2a2a3e;
       color: #ccc;
@@ -121,10 +123,68 @@
       border-color: #5fbcff;
       font-weight: 600;
     }
+    /* completed: 用户在 CFC 完成保存后手动标记的状态. 绿底 + ✓ 前缀,
+       与 active 互相独立 (一个块可以同时是"正在播"和"已保存过"); .active.completed 优先显示 active 蓝色, 保留绿边框 + ✓. */
+    #chunkJumpBar button.completed {
+      background: #1f5e3a;
+      color: #b8efc4;
+      border-color: #50c878;
+    }
+    #chunkJumpBar button.completed::before { content: '✓ '; }
+    #chunkJumpBar button.completed:hover:not(:disabled) {
+      background: #2a6e48;
+      border-color: #66d690;
+    }
+    #chunkJumpBar button.active.completed {
+      background: #4a90e2;
+      color: #fff;
+      border-color: #50c878;
+    }
     #chunkJumpBar button:disabled {
       opacity: 0.5;
       cursor: not-allowed;
     }
+
+    /* chunkConfirm — 唯一可信"完成"信号是 CFC 弹 ACTION_CREATE_DOCUMENT 对话框;
+       用户在 CFC 看到对话框并完成保存后点这个绿主按钮, 当前块标 ✓ + 自动跳下一未完成. */
+    #chunkConfirm {
+      flex-shrink: 0;
+      background: rgba(80, 200, 120, 0.08);
+      padding: 10px 16px;
+      display: none;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      border-top: 1px solid #2a4a3a;
+    }
+    #chunkConfirm.visible { display: flex; }
+    #chunkConfirm button.primary {
+      padding: 8px 16px;
+      background: #50c878;
+      color: #0a0a1a;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    #chunkConfirm button.primary:hover:not(:disabled) { background: #66d690; }
+    #chunkConfirm button.primary:disabled { opacity: 0.5; cursor: not-allowed; }
+    #chunkConfirm button.secondary {
+      padding: 5px 10px;
+      background: #555;
+      color: #ccc;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 11px;
+      white-space: nowrap;
+    }
+    #chunkConfirm button.secondary:hover:not(:disabled) { background: #666; }
+    #chunkConfirm button.secondary:disabled { opacity: 0.5; cursor: not-allowed; }
+    #chunkConfirm .stats { color: #5fbcff; font-size: 12px; font-weight: 500; white-space: nowrap; }
+    #chunkConfirm .hint { color: #888; font-size: 11px; flex: 1; min-width: 200px; }
 
     #log {
       position: absolute; top: 60px; right: 16px;
@@ -161,6 +221,9 @@
     <input type="number" id="fps" min="5" max="20" value="15" style="width: 50px;">
     <label>冗余</label>
     <input type="number" id="redundancy" min="1.0" max="3.0" step="0.1" value="1.5" style="width: 60px;" title="fountain code 冗余倍数（默认 1.5x）">
+    <label title="锁定: 发送端不自动 advance, 反复发当前块的新 fountain 帧, 让 CFC 弹保存窗时屏幕一定是该块; 配合 ✅ 主按钮使用">
+      <input type="checkbox" id="lockToCurrent"> 🔒锁定当前块
+    </label>
     <button id="btnStart" disabled>开始传输</button>
     <button id="btnStop" class="stop" disabled>停止</button>
     <button id="btnDebug" title="切换日志显示">🐛</button>
@@ -178,6 +241,13 @@
 </div>
 
 <div id="chunkJumpBar"></div>
+
+<div id="chunkConfirm">
+  <button id="btnConfirmChunk" type="button" class="primary">✅ 已保存这一块 → 跳下一未完成</button>
+  <span class="stats" id="confirmStats">0 / 0 已保存</span>
+  <span class="hint">📱 CFC 弹出"保存到哪里"对话框并完成保存后, 点这个按钮标记当前块为已保存并跳到下一个未完成块</span>
+  <button id="btnResetCompleted" type="button" class="secondary" title="清空当前文件的已保存进度">↺ 清空</button>
+</div>
 
 <div id="progress">
   <div id="p_hint" style="margin-bottom: 6px; color: #f5b942; font-weight: 500; text-align: center;">
@@ -255,6 +325,14 @@ const State = {
   // 用户主动跳转目标 chunk 索引 (multiMode: 0 = manifest, 1..N = 数据块).
   // 非 null 时 advanceToNextChunk 顶部消费一次后立即清空, 防止下一帧重复跳转.
   jumpRequested: null,
+  // 用户手动标记"CFC 已弹保存对话框且完成"的 chunk index 集合 (multi 模式: 0=manifest, 1..N=data).
+  // 唯一可信完成信号: CFC 的 ACTION_CREATE_DOCUMENT 弹窗; 用户在 CFC 完成保存后回来点 chunkConfirm 主按钮即加入.
+  // 持久化 key = filename + sha256 + chunk_size + chunk_count, 同文件刷新页面能恢复; 内容/切法变后 key 自动错位防误恢复.
+  completedChunks: new Set(),
+  // 🔒 锁定当前块: advanceToNextChunk 触发时不前进 curChunkIndex, 反复 init+feed 当前 stream 生成新 fountain 帧.
+  // 作用: CFC 弹保存窗时屏幕一定还在播该块 (因为发送端不会自动 advance), 避免"屏幕≠CFC 完成块"错位.
+  // 用户主动 setJumpTarget 时锁定不阻拦 (jumpRequested 优先级 > lockToCurrent).
+  lockToCurrent: false,
 };
 
 const ESTIMATED_BYTES_PER_FRAME = 7500; // Mode B default ECC payload
@@ -396,6 +474,7 @@ async function prepareFile(file) {
     State.file = null;
     State.simpleMode = false;
     State.jumpRequested = null;
+    State.completedChunks = new Set();
     $('btnStart').disabled = true;
 
     log(`Preparing ${file.name} (${fmtBytes(file.size)})`);
@@ -452,7 +531,9 @@ async function prepareFile(file) {
       log(`Sliced into ${chunkCount} chunks, manifest = ${State.manifestBytes.length} bytes`, 'ok');
     }
 
-    applyMode();   // 同步 UI 文案 + 计算 totalFramesNeeded
+    loadCompletedFromStorage();  // multi 模式从 localStorage 恢复; simple 模式直接 reset (key=null 不读)
+    applyMode();   // 同步 UI 文案 + 计算 totalFramesNeeded + renderJumpButtons (此时 completed 状态已就绪)
+    updateConfirmStats();
   } catch (err) {
     // OOM / arrayBuffer 失败等异常 — 把 UI 一起 reset, 避免半截信息让用户误以为加载成功
     log(`Failed to prepare "${file.name}": ${(err && err.message) || err}`, 'err');
@@ -460,6 +541,7 @@ async function prepareFile(file) {
     State.manifest = null;
     State.manifestBytes = null;
     State.file = null;
+    State.completedChunks = new Set();
     $('m_filename').textContent = '—';
     $('m_filesize').textContent = '—';
     $('m_filehash').textContent = '—';
@@ -494,6 +576,11 @@ function startTransmission() {
   $('canvas').style.visibility = 'visible';
   $('dropzone').classList.add('hidden');
   $('progress').classList.add('active');
+  // chunkConfirm 只在 multi 模式有意义 (simple 模式只有 1 个 stream, 没有"跳下一未完成"概念)
+  if (!State.simpleMode) {
+    $('chunkConfirm').classList.add('visible');
+    updateConfirmStats();
+  }
   $('btnStart').disabled = true;
   $('btnStop').disabled = false;
   $('chunkSize').disabled = true;
@@ -517,6 +604,7 @@ function stopTransmission() {
   $('canvas').style.visibility = 'hidden';
   $('dropzone').classList.remove('hidden');
   $('progress').classList.remove('active');
+  $('chunkConfirm').classList.remove('visible');
   requestAnimationFrame(fitCanvas);
   // 重渲按钮组让其变 disabled 样式 (State.active=false 已经设置)
   renderJumpButtons();
@@ -541,7 +629,8 @@ function renderJumpButtons() {
   for (let i = 0; i < total; i++) {
     const text = i === 0 ? 'manifest' : `part${String(i - 1).padStart(padW, '0')}`;
     const dis = State.active ? '' : ' disabled';
-    parts.push(`<button type="button" data-idx="${i}"${dis}>${text}</button>`);
+    const cls = State.completedChunks.has(i) ? ' class="completed"' : '';
+    parts.push(`<button type="button"${cls} data-idx="${i}"${dis}>${text}</button>`);
   }
   bar.innerHTML = parts.join('');
   bar.classList.add('visible');
@@ -566,9 +655,110 @@ function highlightActiveJumpBtn(idx) {
   });
 }
 
+// ============= 已保存进度持久化 =============
+// 唯一可信"完成"信号是 CFC ACTION_CREATE_DOCUMENT 对话框, 由用户手动点 chunkConfirm 按钮告知发送端.
+// 持久化用 localStorage, key 绑定 manifest 的 sha256 + chunk_size, 同文件刷新页面可恢复;
+// 内容/切法改变时 key 自动错位, 不会错恢复 stale completedChunks.
+function getProgressStorageKey() {
+  if (State.simpleMode || !State.manifest) return null;
+  // 不含 encodeIdBase: 每次 prepareFile 都基于时间戳重生成, 写进 key 会让"同文件刷新后恢复进度"功能失效.
+  // 必须含 sha256 + chunk_size 否则会错恢复 stale 进度 (codex review #3 P2 指出的两个 collision 场景):
+  //   1) 同名 + 同字节长度 + 不同内容: filename/chunk_count/total_size 全一致, 但内容已变 → 跳过这些块不发, CFC 收到的 chunk hash 与 manifest 对不上 → reassemble 失败
+  //   2) 同 chunk_count + 不同 chunk_size: 例如 18MB 文件用 10MB/12MB 切都 = 2 块, 切片边界不同 → 同样错恢复
+  // 加 sha256 区分 (1), 加 chunk_size 区分 (2); filename 保留作可读性方便调试 localStorage.
+  return `cimbar-bigfile:saved:${State.manifest.filename}:${State.manifest.sha256}:${State.manifest.chunk_size}:${State.manifest.chunk_count}`;
+}
+
+function loadCompletedFromStorage() {
+  State.completedChunks = new Set();
+  const key = getProgressStorageKey();
+  if (!key) return;
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return;
+    const arr = JSON.parse(raw);
+    if (!Array.isArray(arr)) return;
+    const total = 1 + State.chunks.length;
+    for (const n of arr) {
+      if (Number.isInteger(n) && n >= 0 && n < total) State.completedChunks.add(n);
+    }
+    if (State.completedChunks.size > 0) {
+      log(`恢复 ${State.completedChunks.size} 块已保存进度 (来自上次会话)`, 'ok');
+    }
+  } catch (e) {
+    log(`读取已保存进度失败: ${e.message}`, 'warn');
+  }
+}
+
+function saveCompletedToStorage() {
+  const key = getProgressStorageKey();
+  if (!key) return;
+  try {
+    localStorage.setItem(key, JSON.stringify([...State.completedChunks].sort((a, b) => a - b)));
+  } catch (e) {
+    log(`保存进度失败: ${e.message}`, 'warn');
+  }
+}
+
+function updateConfirmStats() {
+  if (State.simpleMode || State.chunks.length === 0) {
+    $('confirmStats').textContent = '0 / 0 已保存';
+    return;
+  }
+  const total = 1 + State.chunks.length;
+  $('confirmStats').textContent = `${State.completedChunks.size} / ${total} 已保存`;
+}
+
+function chunkIndexLabel(idx) {
+  if (idx === 0) return 'manifest';
+  const padW = State.chunks.length < 100 ? 2 : (State.chunks.length < 1000 ? 3 : 4);
+  return `part${String(idx - 1).padStart(padW, '0')}`;
+}
+
+function markCurrentChunkCompleted() {
+  if (!State.active || State.simpleMode) return;
+  const cur = State.curChunkIndex;
+  if (cur < 0) return;
+  const total = 1 + State.chunks.length;
+  State.completedChunks.add(cur);
+  saveCompletedToStorage();
+  log(`已标记 "${chunkIndexLabel(cur)}" 为已保存 (${State.completedChunks.size}/${total})`, 'ok');
+  renderJumpButtons();
+  updateConfirmStats();
+
+  // 从 cur+1 开始环形查找下一个未完成块
+  let next = -1;
+  for (let i = 1; i <= total; i++) {
+    const idx = (cur + i) % total;
+    if (!State.completedChunks.has(idx)) { next = idx; break; }
+  }
+  if (next === -1) {
+    log('✅ 全部块都已标记为已保存! 现在可以点"停止"了～', 'ok');
+    return;
+  }
+  setJumpTarget(next);
+  // 立即 advance, 不等当前 chunk 把估算帧数发完 — 用户已确认 CFC 收到了, 继续发当前块是浪费
+  advanceToNextChunk();
+}
+
+function resetCompleted() {
+  if (State.simpleMode || State.chunks.length === 0) return;
+  if (State.completedChunks.size === 0) {
+    log('当前没有已保存的块', 'warn');
+    return;
+  }
+  const prevCount = State.completedChunks.size;
+  State.completedChunks = new Set();
+  saveCompletedToStorage();
+  renderJumpButtons();
+  updateConfirmStats();
+  log(`已清空 ${prevCount} 块已保存标记`, 'ok');
+}
+
 function advanceToNextChunk() {
   // 跳转处理: 用户点了某 chunk 按钮 → 强制把 curChunkIndex 设为 target-1,
   // 让下一行 += 1 自然命中 target. simpleMode 下按钮组隐藏不可能触发, 但仍兜底清空.
+  // 跳转优先级 > 锁定: 用户主动 setJumpTarget 时锁定不阻拦, 让"改变目标"能即时生效.
   if (State.jumpRequested !== null) {
     if (!State.simpleMode) {
       const target = State.jumpRequested;
@@ -576,6 +766,14 @@ function advanceToNextChunk() {
       log(`>>> Jumping to chunk index ${target}`, 'ok');
     }
     State.jumpRequested = null;
+  } else if (State.lockToCurrent && !State.simpleMode && State.curChunkIndex >= 0) {
+    // 🔒 锁定模式 + 没有挂起跳转: curChunkIndex -= 1 中和下面的 += 1, 让索引保持不变.
+    // 后续仍走 init+feed 重新喂 wasm encoder, 让 CFC 持续收到当前 stream 的新 fountain 帧.
+    // 这样 CFC 弹保存窗时屏幕一定是该块, 用户点 ✅ 标记的就是 CFC 实际保存的块.
+    const lockedLabel = chunkIndexLabel(State.curChunkIndex);
+    State.curChunkIndex -= 1;
+    State.loopCount = (State.loopCount || 0) + 1;
+    log(`🔒 Locked on ${lockedLabel}, re-feeding fountain (round ${State.loopCount})`, 'ok');
   }
 
   State.curChunkIndex += 1;
@@ -719,6 +917,12 @@ $('dropzone').addEventListener('drop', async (e) => {
 $('btnStart').addEventListener('click', startTransmission);
 $('btnStop').addEventListener('click', stopTransmission);
 $('btnDebug').addEventListener('click', () => $('log').classList.toggle('active'));
+$('btnConfirmChunk').addEventListener('click', markCurrentChunkCompleted);
+$('btnResetCompleted').addEventListener('click', resetCompleted);
+$('lockToCurrent').addEventListener('change', (e) => {
+  State.lockToCurrent = e.target.checked;
+  log(`🔒 锁定当前块: ${State.lockToCurrent ? 'ON (发送端将停在当前块不自动 advance)' : 'OFF (fountain 自由循环所有块)'}`, 'ok');
+});
 
 // 全局 dragover 防止浏览器把文件当 URL 打开
 window.addEventListener('dragover', (e) => e.preventDefault());

@@ -327,7 +327,7 @@ const State = {
   jumpRequested: null,
   // 用户手动标记"CFC 已弹保存对话框且完成"的 chunk index 集合 (multi 模式: 0=manifest, 1..N=data).
   // 唯一可信完成信号: CFC 的 ACTION_CREATE_DOCUMENT 弹窗; 用户在 CFC 完成保存后回来点 chunkConfirm 主按钮即加入.
-  // 持久化 key = filename + chunk_count + total_size, 同文件刷新页面能恢复进度.
+  // 持久化 key = filename + sha256 + chunk_size + chunk_count, 同文件刷新页面能恢复; 内容/切法变后 key 自动错位防误恢复.
   completedChunks: new Set(),
   // 🔒 锁定当前块: advanceToNextChunk 触发时不前进 curChunkIndex, 反复 init+feed 当前 stream 生成新 fountain 帧.
   // 作用: CFC 弹保存窗时屏幕一定还在播该块 (因为发送端不会自动 advance), 避免"屏幕≠CFC 完成块"错位.
@@ -657,12 +657,16 @@ function highlightActiveJumpBtn(idx) {
 
 // ============= 已保存进度持久化 =============
 // 唯一可信"完成"信号是 CFC ACTION_CREATE_DOCUMENT 对话框, 由用户手动点 chunkConfirm 按钮告知发送端.
-// 持久化用 localStorage, key 含 encode_id_base+filename+chunk_count, 不同文件互不干扰; 同文件刷新页面可恢复.
+// 持久化用 localStorage, key 绑定 manifest 的 sha256 + chunk_size, 同文件刷新页面可恢复;
+// 内容/切法改变时 key 自动错位, 不会错恢复 stale completedChunks.
 function getProgressStorageKey() {
   if (State.simpleMode || !State.manifest) return null;
   // 不含 encodeIdBase: 每次 prepareFile 都基于时间戳重生成, 写进 key 会让"同文件刷新后恢复进度"功能失效.
-  // filename + chunk_count + total_size 已能唯一标识 (同名文件不同内容时 size 大概率不同).
-  return `cimbar-bigfile:saved:${State.manifest.filename}:${State.manifest.chunk_count}:${State.manifest.total_size}`;
+  // 必须含 sha256 + chunk_size 否则会错恢复 stale 进度 (codex review #3 P2 指出的两个 collision 场景):
+  //   1) 同名 + 同字节长度 + 不同内容: filename/chunk_count/total_size 全一致, 但内容已变 → 跳过这些块不发, CFC 收到的 chunk hash 与 manifest 对不上 → reassemble 失败
+  //   2) 同 chunk_count + 不同 chunk_size: 例如 18MB 文件用 10MB/12MB 切都 = 2 块, 切片边界不同 → 同样错恢复
+  // 加 sha256 区分 (1), 加 chunk_size 区分 (2); filename 保留作可读性方便调试 localStorage.
+  return `cimbar-bigfile:saved:${State.manifest.filename}:${State.manifest.sha256}:${State.manifest.chunk_size}:${State.manifest.chunk_count}`;
 }
 
 function loadCompletedFromStorage() {
