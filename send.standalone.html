@@ -210,6 +210,13 @@
     <span>encode_id: <b id="m_encodeid">—</b></span>
   </div>
   <div id="ctrl">
+    <label>预设</label>
+    <select id="preset" title="按场景一键切换 FPS+冗余 (选自定义后可手动微调)">
+      <option value="balanced" selected>默认 (推荐)</option>
+      <option value="aggressive">激进 (固定支架+好光线)</option>
+      <option value="conservative">保守 (手持/差光线)</option>
+      <option value="custom">自定义</option>
+    </select>
     <label>块大小</label>
     <select id="chunkSize" disabled>
       <option value="10485760" selected>10 MB</option>
@@ -220,7 +227,8 @@
     <label>FPS</label>
     <input type="number" id="fps" min="5" max="20" value="15" style="width: 50px;">
     <label>冗余</label>
-    <input type="number" id="redundancy" min="1.0" max="3.0" step="0.1" value="1.5" style="width: 60px;" title="fountain code 冗余倍数（默认 1.5x）">
+    <input type="number" id="redundancy" min="1.0" max="3.0" step="0.1" value="1.5" style="width: 60px;" title="fountain code 冗余倍数 (wirehair 实际 overhead ~1.05x; 1.5x 给手抖/对焦的安全余量)">
+    <span id="throughputHint" title="物理上限 = FPS × 7500 B; 区间下限 = 上限 / 冗余 (跑满冗余时的有效吞吐). 实测受光线/对焦影响" style="color: #5fbcff; font-size: 12px; white-space: nowrap;">预期 ~73–110 KB/s</span>
     <label title="锁定: 发送端不自动 advance, 反复发当前块的新 fountain 帧, 让 CFC 弹保存窗时屏幕一定是该块; 配合 ✅ 主按钮使用">
       <input type="checkbox" id="lockToCurrent"> 🔒锁定当前块
     </label>
@@ -336,6 +344,14 @@ const State = {
 };
 
 const ESTIMATED_BYTES_PER_FRAME = 7500; // Mode B default ECC payload
+
+// 三种参数预设: balanced=README 实测基准(15fps/1.5x, ~100 KB/s);
+// aggressive=屏幕固定+好光线时榨速度(18fps/1.2x); conservative=手持/反光(12fps/2.0x)
+const PRESETS = {
+  balanced:     { fps: 15, redundancy: 1.5 },
+  aggressive:   { fps: 18, redundancy: 1.2 },
+  conservative: { fps: 12, redundancy: 2.0 },
+};
 
 // ============= WASM 集成 =============
 let wasmReady = false;
@@ -894,6 +910,27 @@ function updateProgressUI() {
   }
 }
 
+// ============= 预设 & 吞吐提示 =============
+// 选预设 → 把 PRESETS[name] 写回 fps/redundancy 输入框, 同步刷新吞吐区间.
+// 用户手动改 fps/redundancy → 把 preset select 切到 "custom" (不强行追溯匹配某个预设).
+function applyPreset(name) {
+  const p = PRESETS[name];
+  if (!p) return;  // "custom" 不动 input
+  $('fps').value = p.fps;
+  $('redundancy').value = p.redundancy;
+  updateThroughputHint();
+}
+
+// 物理上限 = fps × 7500B/帧; 跑满冗余时有效吞吐 = 物理上限 / 冗余倍数.
+// wirehair 实际只需 ~1.05x overhead 即可解码, CFC 提前收齐后吞吐接近物理上限.
+function updateThroughputHint() {
+  const fps = parseInt($('fps').value, 10) || 15;
+  const r   = parseFloat($('redundancy').value) || 1.5;
+  const physMax    = fps * ESTIMATED_BYTES_PER_FRAME / 1024;
+  const effectiveMin = physMax / r;
+  $('throughputHint').textContent = `预期 ~${effectiveMin.toFixed(0)}–${physMax.toFixed(0)} KB/s`;
+}
+
 // ============= 事件绑定 =============
 $('dropzone').addEventListener('click', () => $('fileInput').click());
 $('fileInput').addEventListener('change', async (e) => {
@@ -923,6 +960,12 @@ $('lockToCurrent').addEventListener('change', (e) => {
   State.lockToCurrent = e.target.checked;
   log(`🔒 锁定当前块: ${State.lockToCurrent ? 'ON (发送端将停在当前块不自动 advance)' : 'OFF (fountain 自由循环所有块)'}`, 'ok');
 });
+
+$('preset').addEventListener('change', (e) => applyPreset(e.target.value));
+// 用户手动改 → 切到 custom 表明已经偏离预设; setValue (applyPreset) 不会触发 input 事件, 不会循环
+$('fps').addEventListener('input', () => { $('preset').value = 'custom'; updateThroughputHint(); });
+$('redundancy').addEventListener('input', () => { $('preset').value = 'custom'; updateThroughputHint(); });
+updateThroughputHint();
 
 // 全局 dragover 防止浏览器把文件当 URL 打开
 window.addEventListener('dragover', (e) => e.preventDefault());
