@@ -4,11 +4,11 @@
 
 # cimbar-bigfile
 
-> 基于 [sz3/libcimbar](https://github.com/sz3/libcimbar) 的大文件光学传输工具——突破 ~10MB 单次稳定上限，无网络环境下传输任意大小文件。
+> 基于 [sz3/libcimbar](https://github.com/sz3/libcimbar) 的大文件光学传输工具——通过多 fountain stream 并行突破单 stream 容量上限（libcimbar Mode B 单 stream wirehair cap ~39 MB），无网络环境下传输 GB 级文件。
 
 ## 这是什么？
 
-`cimbar-bigfile` 在 libcimbar 之上做了一层**纯 HTML/JS 包装**，把大文件切成 10MB 的小块，每块独立用 fountain code 编码（不同 `encode_id`），在屏幕上依次播放彩色码动画。
+`cimbar-bigfile` 在 libcimbar 之上做了一层**纯 HTML/JS 包装**，把大文件切成 chunk（默认 10 MB，**libcimbar 作者推荐 10-15 MB sweet spot**，留出冗余 headroom），每块独立用 fountain code 编码（不同 `encode_id`），在屏幕上依次播放彩色码动画。
 
 接收端用作者的 **CameraFileCopy (CFC)** 安卓应用扫码，CFC 内置的 `fountain_decoder_sink` 已经原生支持按 `encode_id` 并发分桶解码，**完全无需修改**。所有块收完后用浏览器打开拼接页面，拖入文件即可还原原始大文件。
 
@@ -81,7 +81,7 @@
 
 ## 性能参考
 
-参考环境：1080p 屏幕 + Pixel 5 + 默认参数（Mode B / 15 fps / 10 MB 块 / 1.5x 冗余）
+参考环境：1080p 屏幕 + Pixel 5 + 默认参数（Mode B / 15 fps / 10 MB 块 / 2.0x 冗余）
 
 | 文件大小 | 块数 | 弹窗次数 | 预估耗时 | 参考吞吐 (Mode B) |
 |---------|------|---------|---------|-------------------|
@@ -92,6 +92,40 @@
 > 验证覆盖：5 MB（bundled `test/test-5m.bin`）+ ~28 MB（手动光学链路 end-to-end）+ 100 MB（应用层 round-trip via `scripts/test-round-trip-100mb.js`）。其他规模线性外推。
 >
 > 实际吞吐受光线、屏幕亮度、相机自动对焦稳定性影响很大。
+
+### 冗余倍数 (redundancy) 怎么选
+
+libcimbar 作者在 [sz3/libcimbar#165 评论](https://github.com/sz3/libcimbar/pull/165#issuecomment-4421610294) 中明确 **"no penalty for redundant blocks (e.g. 3x or 4x for 10 MB chunks)"**——也就是说 fountain code 的本质决定了：
+
+- **冗余只影响发送端的发帧总数**，不影响 CFC 接收完成所需帧数（CFC 只要凑齐足够独立帧就完成）
+- 多余的帧 CFC 会被自动忽略，**不浪费接收时间**
+- 高冗余的实际价值是：**单 chunk 第一轮没收齐时**，发送端循环里继续补帧的兜底厚度
+
+| redundancy | 适用场景 |
+|------------|---------|
+| 1.2-1.5x | 屏幕固定支架 + 良好光线 + 对焦稳定（aggressive 预设） |
+| **2.0x（默认）** | 一般室内光线 + 手持稳定（balanced 预设） |
+| 3.0-4.0x | 差光线 / 反光 / 手抖明显（conservative 预设） |
+
+发送端 UI 的 redundancy 输入框上限放宽到 5.0x，覆盖极端场景。
+
+## 进阶：超过 ~1.2 GB 的超大文件
+
+单次会话受 wirehair `uint16_t` encode_id slot 限制，`chunk_count` 应保守约束在 ~120 块以内（即 ~1.2 GB at 10MB/chunk）。**libcimbar 作者在 [sz3/libcimbar#165 评论](https://github.com/sz3/libcimbar/pull/165#issuecomment-4421610294) 提到两种突破方法**，但都需要用户手动 babysit：
+
+**方法 1：变 chunk size 重启会话**
+
+> "Provided you're finished sending a chunk, you can re-use the encode_id if you slightly vary the chunk size... (e.g. 10.01 MB chunks after the first go around)"
+
+第一轮把文件前 ~1.2 GB 用 10 MB chunk 发完；第二轮把剩余部分用稍微不同的 chunk size（如 10.01 MB 或 10.5 MB）重启发送端。wirehair 会把不同 chunk size 视为新文件，**不会占用旧的 encode_id slot**。
+
+**方法 2：CFC 端重启 decoder 清缓存**
+
+> "you can also restart the decoder to clear its cache of 'done' files, which will have the same effect without changing the chunk size"
+
+把 CFC 应用整个重启一次，它的 `fountain_decoder_sink` 内部 "done files" 缓存被清空。之后同 encode_id 可以复用。但**前一轮的部分进度也会一并丢失**——只适合"前一轮已全部完成保存"后的新一轮场景。
+
+⚠️ 两种方法都未在 cimbar-bigfile 中自动化实现，需要用户手动操作。理论上可传任意大文件，实测最大已验证至 100 MB（见上方性能表）。
 
 ## 开发
 

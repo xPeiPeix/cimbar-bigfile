@@ -227,7 +227,7 @@
     <label>FPS</label>
     <input type="number" id="fps" min="5" max="20" value="15" style="width: 50px;">
     <label>冗余</label>
-    <input type="number" id="redundancy" min="1.0" max="3.0" step="0.1" value="1.5" style="width: 60px;" title="fountain code 冗余倍数 (wirehair 实际 overhead ~1.05x; 1.5x 给手抖/对焦的安全余量)">
+    <input type="number" id="redundancy" min="1.0" max="5.0" step="0.1" value="2.0" style="width: 60px;" title="fountain code 冗余倍数. libcimbar 作者 confirms no penalty for higher values (sz3/libcimbar#165): 多余冗余只增加发送端发帧总数, 不影响 CFC 接收完成时间. 推荐: 1.5x 安全 / 2x 默认 / 3-4x 极端环境">
     <span id="throughputHint" title="物理上限 = FPS × 7500 B; 区间下限 = 上限 / 冗余 (跑满冗余时的有效吞吐). 实测受光线/对焦影响" style="color: #5fbcff; font-size: 12px; white-space: nowrap;">预期 ~73–110 KB/s</span>
     <label title="锁定: 发送端不自动 advance, 反复发当前块的新 fountain 帧, 让 CFC 弹保存窗时屏幕一定是该块; 配合 ✅ 主按钮使用">
       <input type="checkbox" id="lockToCurrent"> 🔒锁定当前块
@@ -345,12 +345,14 @@ const State = {
 
 const ESTIMATED_BYTES_PER_FRAME = 7500; // Mode B default ECC payload
 
-// 三种参数预设: balanced=README 实测基准(15fps/1.5x, ~100 KB/s);
-// aggressive=屏幕固定+好光线时榨速度(18fps/1.2x); conservative=手持/反光(12fps/2.0x)
+// 三种参数预设. redundancy 数值参考 libcimbar 作者 sz3/libcimbar#165:
+// "no penalty for redundant blocks (e.g. 3x or 4x for 10 MB chunks)" — 冗余只增加发送端发帧总数,
+// 不影响 CFC 接收完成时间, 所以预设倾向于给足冗余 headroom 兜底.
+// balanced: 一般室内光线 + 手持 (默认); aggressive: 屏幕支架 + 良好光线; conservative: 差光线 / 反光 / 手抖
 const PRESETS = {
-  balanced:     { fps: 15, redundancy: 1.5 },
-  aggressive:   { fps: 18, redundancy: 1.2 },
-  conservative: { fps: 12, redundancy: 2.0 },
+  balanced:     { fps: 15, redundancy: 2.0 },
+  aggressive:   { fps: 18, redundancy: 1.5 },
+  conservative: { fps: 12, redundancy: 3.0 },
 };
 
 // ============= WASM 集成 =============

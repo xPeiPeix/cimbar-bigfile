@@ -75,6 +75,24 @@ const encode_id_base = Math.floor(Date.now() / 1000) & 0xFFFF;
 - libcimbar wasm 的 `_cimbare_init_encode` 第三参数接受 `int32`，但**实际 wirehair fountain decoder 每 ~128 个 transfer 后会循环复用 encode_id slot**（详见 [sz3/libcimbar#149](https://github.com/sz3/libcimbar/issues/149)）
 - 单次会话 `chunk_count` 因此应保守约束在 **~120 块以内**（即 ~1.2 GB at 10MB/chunk 的实用上限）。超过此值后 CFC 端 wirehair 解码器会忽略循环后重复 encode_id 的数据
 
+### chunk_size 选择参考（wirehair 硬限制推导）
+
+libcimbar 作者在 [sz3/libcimbar#165 评论](https://github.com/sz3/libcimbar/pull/165#issuecomment-4421610294) 给出了 wirehair 内部限制的具体数学：
+
+- **wirehair 的 `block_id` 是 `uint16_t`**，即单 stream 最多 65536 个有效 block
+- **Mode B (默认) block size = 7500 / 12 = 600 bytes** → 单 stream 有效字节数上限 ≈ 65536 × 600 ≈ **39 MB**
+- **33 MB 文件理论最大冗余仅 ~1.2x**（39 / 33 ≈ 1.18，hard cap）—— counter rollover 不会 break，但实际 redundancy 受限，不利于光线/对焦不佳场景
+- **Mode Bu block size 更小** → cap 也相应更低，**不应用于 ≥30 MB 文件**
+
+**实践推荐**：
+
+| chunk_size | 最大可用冗余 | 适用场景 |
+|------------|--------------|---------|
+| 5 MB | ~7.8x | 极端环境（差光线/手抖），冗余余量充足 |
+| 10 MB（默认） | ~3.9x | **推荐 sweet spot**，留出 3x+ 冗余 headroom |
+| 15 MB | ~2.6x | 大文件时减少块数，冗余仍宽松 |
+| 33 MB | ~1.2x | hard cap，不推荐（冗余太低易卡） |
+
 **碰撞处理**：CFC 一旦有同 encode_id 的两个不同文件先后出现，行为未定义（可能合并、可能丢失）。开始新传输前请等待前一传输全部完成或重启 CFC。
 
 ## 版本演进规则

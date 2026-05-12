@@ -4,11 +4,11 @@
 
 # cimbar-bigfile
 
-> An optical large-file transfer tool built on top of [sz3/libcimbar](https://github.com/sz3/libcimbar) — break past the ~10MB single-shot stable cap and move arbitrarily large files in fully air-gapped environments.
+> An optical large-file transfer tool built on top of [sz3/libcimbar](https://github.com/sz3/libcimbar) — break past the single-stream wirehair capacity ceiling (~39 MB hard cap in Mode B) by running multiple fountain streams in parallel, enabling GB-scale transfers in fully air-gapped environments.
 
 ## What is this?
 
-`cimbar-bigfile` is a **pure HTML/JS wrapper** around libcimbar that splits large files into 10MB chunks, encodes each chunk as an independent fountain-code stream (distinct `encode_id`), and plays them back as a colored-barcode animation on the screen.
+`cimbar-bigfile` is a **pure HTML/JS wrapper** around libcimbar that splits large files into chunks (default 10 MB — **libcimbar author recommends 10-15 MB as the sweet spot**, leaving redundancy headroom), encodes each chunk as an independent fountain-code stream (distinct `encode_id`), and plays them back as a colored-barcode animation on the screen.
 
 The receiver uses sz3's **CameraFileCopy (CFC)** Android app to scan; CFC's built-in `fountain_decoder_sink` already supports concurrent per-`encode_id` bucketing natively, so **no app modifications are required**. Once all chunks are received, open the reassembly page in any browser, drop the files in, and the original file is reconstructed.
 
@@ -81,7 +81,7 @@ The default sender behavior cycles `manifest → part00 → part01 → ... → l
 
 ## Performance reference
 
-Reference rig: 1080p screen + Pixel 5 + default settings (Mode B / 15 fps / 10 MB chunks / 1.5x redundancy)
+Reference rig: 1080p screen + Pixel 5 + default settings (Mode B / 15 fps / 10 MB chunks / 2.0x redundancy)
 
 | File size | Chunks | Save dialogs | Estimated time | Throughput (Mode B) |
 |-----------|--------|--------------|----------------|---------------------|
@@ -92,6 +92,40 @@ Reference rig: 1080p screen + Pixel 5 + default settings (Mode B / 15 fps / 10 M
 > Verification coverage: 5 MB (bundled `test/test-5m.bin`) + ~28 MB (manual end-to-end optical link) + 100 MB (application-layer round-trip via `scripts/test-round-trip-100mb.js`). Other sizes extrapolate linearly.
 >
 > Actual throughput depends heavily on lighting, screen brightness, and camera autofocus stability.
+
+### Choosing a redundancy multiplier
+
+The libcimbar author confirmed in a [sz3/libcimbar#165 comment](https://github.com/sz3/libcimbar/pull/165#issuecomment-4421610294) that **"no penalty for redundant blocks (e.g. 3x or 4x for 10 MB chunks)"** — which follows from how fountain code works:
+
+- Redundancy only affects **how many frames the sender emits in total**, not how many CFC needs to finish decoding (CFC stops once it has enough independent frames)
+- Surplus frames are silently ignored by CFC, **so they don't waste receive time**
+- High redundancy's real value: **a thicker safety margin** when the first sender loop doesn't deliver every chunk cleanly
+
+| redundancy | Use case |
+|------------|----------|
+| 1.2-1.5x | Tripod-mounted screen + good lighting + stable focus (aggressive preset) |
+| **2.0x (default)** | Normal indoor lighting + handheld but steady (balanced preset) |
+| 3.0-4.0x | Poor lighting / glare / visible hand-shake (conservative preset) |
+
+The sender UI's redundancy input goes up to 5.0x for extreme conditions.
+
+## Advanced: files larger than ~1.2 GB
+
+A single session is bounded by wirehair's `uint16_t` encode_id slot — `chunk_count` should stay under ~120 (≈1.2 GB at 10 MB/chunk). **The libcimbar author noted two ways to push past this** in the [sz3/libcimbar#165 comment](https://github.com/sz3/libcimbar/pull/165#issuecomment-4421610294), both requiring manual babysitting:
+
+**Option 1: vary the chunk size and restart the session**
+
+> "Provided you're finished sending a chunk, you can re-use the encode_id if you slightly vary the chunk size... (e.g. 10.01 MB chunks after the first go around)"
+
+Ship the first ~1.2 GB with 10 MB chunks; restart the sender for the remainder with a slightly different chunk size (e.g. 10.01 MB or 10.5 MB). wirehair treats the different chunk size as a new file, so old encode_id slots are not re-used.
+
+**Option 2: restart the CFC decoder to clear its cache**
+
+> "you can also restart the decoder to clear its cache of 'done' files, which will have the same effect without changing the chunk size"
+
+Fully restart the CFC app — its `fountain_decoder_sink` cache of "done files" is wiped, freeing the encode_id slots. **Any partial progress from the previous round is also lost**, so this only fits "all chunks of the previous round were saved successfully, now starting a fresh round" scenarios.
+
+⚠️ Neither option is automated inside cimbar-bigfile yet — both require manual user intervention. Arbitrarily large transfers are theoretically possible; the largest end-to-end verified size is currently 100 MB (see the performance table above).
 
 ## Development
 
