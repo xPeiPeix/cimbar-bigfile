@@ -4,7 +4,7 @@
 
 # cimbar-bigfile
 
-> An optical large-file transfer tool built on top of [sz3/libcimbar](https://github.com/sz3/libcimbar) — break past the single-stream wirehair capacity ceiling (~39 MB hard cap in Mode B) by running multiple fountain streams in parallel, enabling **100+ MB file transfers** (~1.2 GB theoretical single-session ceiling, see [manifest-spec](docs/manifest-spec.md#chunk_size-选择参考-wirehair-硬限制推导)) in fully air-gapped environments.
+> An optical large-file transfer tool built on top of [sz3/libcimbar](https://github.com/sz3/libcimbar) — break past the single-stream wirehair capacity ceiling (~40.5 MB hard cap in Mode B) by running multiple fountain streams in parallel, enabling **100+ MB file transfers** (~1.2 GB theoretical single-session ceiling, see [manifest-spec](docs/manifest-spec.md#chunk_size-选择参考-wirehair-硬限制推导)) in fully air-gapped environments.
 
 ## What is this?
 

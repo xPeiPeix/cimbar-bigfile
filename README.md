@@ -4,7 +4,7 @@
 
 # cimbar-bigfile
 
-> 基于 [sz3/libcimbar](https://github.com/sz3/libcimbar) 的大文件光学传输工具——通过多 fountain stream 并行突破单 stream 容量上限（libcimbar Mode B 单 stream wirehair cap ~39 MB），无网络环境下**实测传输 100+ MB 文件**（理论上限 ~1.2 GB / 单会话, 详见 [manifest-spec](docs/manifest-spec.md#chunk_size-选择参考-wirehair-硬限制推导)）。
+> 基于 [sz3/libcimbar](https://github.com/sz3/libcimbar) 的大文件光学传输工具——通过多 fountain stream 并行突破单 stream 容量上限（libcimbar Mode B 单 stream wirehair cap ~40.5 MB），无网络环境下**实测传输 100+ MB 文件**（理论上限 ~1.2 GB / 单会话, 详见 [manifest-spec](docs/manifest-spec.md#chunk_size-选择参考-wirehair-硬限制推导)）。
 
 ## 这是什么？
 
