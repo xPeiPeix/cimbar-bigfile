@@ -78,7 +78,7 @@ Button visual states (left column in screenshot):
 
 - **CFC pops up a save dialog per chunk**: at 10MB / chunk, a 100MB file requires 11 "save" taps.
 - **Throughput**: about **106 KB/s** (libcimbar Mode B default). 100MB files take an estimated 16-20 minutes.
-- **Receiver currently Android CFC only**: libcimbar's web side has no decoder.
+- **Receiver: Android CFC recommended**: libcimbar upstream v0.6.4 release also ships a web decoder (this repo's `vendor/cimbar-wasm-v0.6.4/recv.html`), but it stalls mid-decode on larger files (≥ 3MB, see [issue #4](https://github.com/xPeiPeix/cimbar-bigfile/issues/4)), and its single-stream design cannot directly consume this repo's multi-stream chunked output (no per-`encode_id` bucketing).
 
 ## Troubleshooting
 

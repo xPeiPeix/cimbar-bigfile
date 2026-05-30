@@ -78,7 +78,7 @@
 
 - **每块完成 CFC 弹一次保存对话框**：10MB / 块时，100MB 文件需要点 11 次"保存"。
 - **吞吐量**：约 **106 KB/s**（libcimbar Mode B 默认）。100MB 文件预计耗时 16-20 分钟。
-- **接收端目前只能用 Android CFC**：libcimbar web 端没有解码器。
+- **接收端推荐 Android CFC**：libcimbar 上游 v0.6.4 release 也带 web 端解码器（即本仓库 `vendor/cimbar-wasm-v0.6.4/recv.html`），但实测大文件（≥ 3MB）会中途停滞（见 [issue #4](https://github.com/xPeiPeix/cimbar-bigfile/issues/4)），且它是单 stream 设计，无法直接消费本仓库的多 stream 分块输出（不支持按 `encode_id` 分桶解码）。
 
 ## 故障排除
 
