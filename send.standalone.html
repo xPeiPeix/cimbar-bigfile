@@ -23,10 +23,12 @@
       border-bottom: 1px solid #333;
       flex-wrap: wrap;
     }
-    #header h1 { font-size: 14px; font-weight: 500; color: #aaa; }
-    #header .meta { font-size: 12px; color: #888; display: flex; gap: 12px; flex-wrap: wrap; }
-    #header .meta span { white-space: nowrap; }
-    #header .meta b { color: #5fbcff; font-weight: 500; }
+    #header h1 { font-size: 14px; font-weight: 500; color: #aaa; white-space: nowrap; }
+
+    /* 文件信息卡 — 现居左栏顶部, 竖向 label/value 列表 (原在顶栏横排, 移走后顶栏不再换行). */
+    .file-meta { font-size: 11px; color: #888; display: flex; flex-direction: column; gap: 4px; }
+    .file-meta .mrow { display: flex; justify-content: space-between; gap: 8px; }
+    .file-meta .mrow b { color: #5fbcff; font-weight: 500; text-align: right; word-break: break-all; }
     #ctrl { display: flex; gap: 8px; align-items: center; margin-left: auto; flex-wrap: wrap; }
     #ctrl label { font-size: 12px; color: #aaa; }
     #ctrl select, #ctrl input { padding: 4px 8px; background: #222; color: #ddd; border: 1px solid #444; border-radius: 4px; font-size: 12px; }
@@ -39,7 +41,38 @@
     #ctrl button.stop { background: #e74c3c; }
     #ctrl button.stop:hover:not(:disabled) { background: #f15a4a; }
 
-    #stage { flex: 1; position: relative; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+    /* main: 三栏(横屏)/上下(竖屏) 响应式容器.
+       canvas 在中间按固有比例(_idealRatio)最大化, 两侧 panel flex:1 自动平分剩余空间.
+       fitCanvas 保证 canvas + 2×MIN_PANEL 不超过可用空间, 故 center 用 flex:0 0 auto 不压缩, 无循环依赖. */
+    #main {
+      flex: 1; position: relative; display: flex; overflow: hidden;
+      flex-direction: row; align-items: stretch;
+    }
+    #main.portrait { flex-direction: column; }
+
+    #center {
+      flex: 0 0 auto; display: flex; align-items: center; justify-content: center;
+      overflow: hidden; position: relative;
+    }
+
+    /* 左右栏(横屏)/上下栏(竖屏): 放文件信息/跳转列表/确认/进度. 内容超出时各自滚动. */
+    .side-panel {
+      flex: 1 1 0; min-width: 0; min-height: 0;
+      display: flex; flex-direction: column; gap: 10px;
+      padding: 12px 14px; overflow-y: auto;
+      background: rgba(0,0,0,0.22);
+    }
+    #left-panel { border-right: 1px solid #333; }
+    #right-panel { border-left: 1px solid #333; }
+    #main.portrait #left-panel { border-right: none; border-bottom: 1px solid #333; }
+    #main.portrait #right-panel { border-left: none; border-top: 1px solid #333; }
+
+    .panel-title {
+      font-size: 12px; color: #aaa; font-weight: 600;
+      display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;
+      border-bottom: 1px solid #2a2a3e; padding-bottom: 4px;
+    }
+    .panel-title .sub { font-size: 10px; color: #777; font-weight: 400; }
 
     #dropzone {
       position: absolute; inset: 0; display: flex; flex-direction: column;
@@ -62,18 +95,17 @@
        默认 visibility: hidden — 只在 startTransmission 时显示, 防止 dropzone margin 区域露出旧码图 */
     #canvas { display: block; visibility: hidden; }
 
-    /* 用 visibility 而非 display 切换显隐: 保持 progress 永远占据布局空间,
-       让 stage 高度恒定, canvas fitCanvas 不会因 progress 显隐而尺寸跳变.
-       (vendor 的实现没这个问题是因为它没有 progress 这种切换显隐的占位元素) */
+    /* progress — 进度信息, 现居右栏. 右栏宽度固定(flex:1), 内容显隐不影响 center 宽度,
+       故 canvas 不会因 progress 显隐而尺寸跳变, 可放心用 display 切换. */
     #progress {
-      flex-shrink: 0;
-      background: rgba(0,0,0,0.6); padding: 8px 16px; font-size: 12px;
-      visibility: hidden; border-top: 1px solid #333;
+      background: rgba(0,0,0,0.5); padding: 10px 12px; font-size: 12px;
+      display: none; border: 1px solid #333; border-radius: 6px;
     }
-    #progress.active { visibility: visible; }
-    #progress .row { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+    #progress.active { display: block; }
+    #progress .row { display: flex; flex-direction: column; gap: 6px; }
+    #progress .row span { display: flex; justify-content: space-between; gap: 12px; }
     #progress .bar-bg {
-      height: 4px; background: #333; border-radius: 2px; overflow: hidden; margin-top: 6px;
+      height: 5px; background: #333; border-radius: 2px; overflow: hidden; margin-top: 10px;
     }
     #progress .bar-fg {
       height: 100%; background: linear-gradient(90deg, #4a90e2, #5fbcff);
@@ -82,28 +114,23 @@
     #progress .label { color: #aaa; }
     #progress .value { color: #5fbcff; font-weight: 500; }
 
-    /* chunkJumpBar — 用户主动跳转目标 chunk 的按钮组 (multi 模式专用).
-       默认 display:none 不占布局; 多块文件加载后 .visible 切成 flex 显示.
-       max-height + overflow-y: chunk 数极多时 (如 500MB → 50 个按钮) 不撑爆页面.
-       按钮 min-width 让多块时网格化排列, 不会出现 manifest/part00 长短不齐. */
+    /* chunkJumpBar — 跳转目标列表 (multi 模式专用), 现居左栏内的垂直全宽按钮列表.
+       单击=跳转, 双击=锁定该块. flex:1 占满左栏剩余高度, 内容超出时自身滚动 (500MB→50 块也不撑爆).
+       竖屏时左栏在顶部高度有限, 列表改横向 wrap 网格. */
     #chunkJumpBar {
-      flex-shrink: 0;
-      background: rgba(0,0,0,0.5);
-      padding: 6px 16px;
+      flex: 1 1 auto; min-height: 60px;
       display: none;
-      flex-wrap: wrap;
+      flex-direction: column;
       gap: 4px;
-      align-items: center;
-      max-height: 120px;
       overflow-y: auto;
-      border-top: 1px solid #333;
     }
     #chunkJumpBar.visible { display: flex; }
-    #chunkJumpBar .label { color: #888; font-size: 11px; margin-right: 4px; }
+    #main.portrait #chunkJumpBar { flex-direction: row; flex-wrap: wrap; align-content: flex-start; }
     #chunkJumpBar button {
-      padding: 4px 10px;
-      min-width: 78px;
-      font-size: 11px;
+      padding: 6px 10px;
+      width: 100%;
+      text-align: left;
+      font-size: 12px;
       background: #2a2a3e;
       color: #ccc;
       border: 1px solid #444;
@@ -111,20 +138,36 @@
       cursor: pointer;
       white-space: nowrap;
       font-family: inherit;
-      transition: background 0.15s, border-color 0.15s;
+      transition: background 0.15s, border-color 0.15s, border-left-width 0.15s;
     }
+    #main.portrait #chunkJumpBar button { width: auto; min-width: 78px; text-align: center; }
     #chunkJumpBar button:hover:not(:disabled) {
       background: #3a3a5e;
       border-color: #5fbcff;
     }
+    /* active: 实际正在播放的块 (跟随 State.curChunkIndex, 真正切到才点亮 — 不再领先于实际播放). */
     #chunkJumpBar button.active {
       background: #4a90e2;
       color: #fff;
       border-color: #5fbcff;
       font-weight: 600;
     }
-    /* completed: 用户在 CFC 完成保存后手动标记的状态. 绿底 + ✓ 前缀,
-       与 active 互相独立 (一个块可以同时是"正在播"和"已保存过"); .active.completed 优先显示 active 蓝色, 保留绿边框 + ✓. */
+    /* locked: 双击锁定的块. 琥珀色左边框 + 淡琥珀背景着色, 视觉上比单纯字形/边框更醒目. 🔒 字形仍由 JS 写入 textContent. */
+    #chunkJumpBar button.locked {
+      border-left: 3px solid #f5b942;
+      background: rgba(245, 185, 66, 0.18);
+    }
+    /* active 时蓝底优先 (active = 屏幕实际播放的块, 需最强视觉), 琥珀左边框仍保留作锁定指示 */
+    #chunkJumpBar button.active.locked {
+      background: #4a90e2;
+      border-left: 3px solid #f5b942;
+    }
+    /* completed 时绿底为主, 但锁定保留可见性: 琥珀左边框 + 略深琥珀背景叠加 (避免锁定指示被绿色完全吃掉) */
+    #chunkJumpBar button.completed.locked {
+      background: rgba(245, 185, 66, 0.28);
+      border-left: 3px solid #f5b942;
+    }
+    /* completed: 用户在 CFC 完成保存后手动标记. 绿底 + ✓ 前缀, 与 active/locked 独立. */
     #chunkJumpBar button.completed {
       background: #1f5e3a;
       color: #b8efc4;
@@ -140,6 +183,14 @@
       color: #fff;
       border-color: #50c878;
     }
+    /* 三态叠加: active=屏幕正在播 + completed=用户已确认保存 + locked=锁定; 蓝底+绿边 specificity (0,2,0) 与 .completed.locked 平局会吃掉琥珀左边框,
+       这条 (0,3,0) 必胜, 保留琥珀左边框 = 任何状态下锁定指示都不消失. */
+    #chunkJumpBar button.active.completed.locked {
+      background: #4a90e2;
+      color: #fff;
+      border-color: #50c878;
+      border-left: 3px solid #f5b942;
+    }
     #chunkJumpBar button:disabled {
       opacity: 0.5;
       cursor: not-allowed;
@@ -148,14 +199,14 @@
     /* chunkConfirm — 唯一可信"完成"信号是 CFC 弹 ACTION_CREATE_DOCUMENT 对话框;
        用户在 CFC 看到对话框并完成保存后点这个绿主按钮, 当前块标 ✓ + 自动跳下一未完成. */
     #chunkConfirm {
-      flex-shrink: 0;
       background: rgba(80, 200, 120, 0.08);
-      padding: 10px 16px;
+      padding: 10px 12px;
       display: none;
-      align-items: center;
-      gap: 12px;
-      flex-wrap: wrap;
-      border-top: 1px solid #2a4a3a;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 8px;
+      border: 1px solid #2a4a3a;
+      border-radius: 6px;
     }
     #chunkConfirm.visible { display: flex; }
     #chunkConfirm button.primary {
@@ -167,7 +218,9 @@
       cursor: pointer;
       font-size: 13px;
       font-weight: 600;
-      white-space: nowrap;
+      /* normal + line-height 1.3 允许文案在窄 panel (minPanel=120) 下换行, 不再 nowrap 撑爆 panel 宽度 */
+      white-space: normal;
+      line-height: 1.3;
     }
     #chunkConfirm button.primary:hover:not(:disabled) { background: #66d690; }
     #chunkConfirm button.primary:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -202,13 +255,6 @@
 
 <div id="header">
   <h1>📡 cimbar-bigfile</h1>
-  <div class="meta">
-    <span>文件: <b id="m_filename">—</b></span>
-    <span>大小: <b id="m_filesize">—</b></span>
-    <span>SHA256: <b id="m_filehash">—</b></span>
-    <span>📱 手机应收: <b id="m_chunkcount">—</b></span>
-    <span>encode_id: <b id="m_encodeid">—</b></span>
-  </div>
   <div id="ctrl">
     <label>预设</label>
     <select id="preset" title="按场景一键切换 FPS+冗余 (选自定义后可手动微调)">
@@ -229,46 +275,58 @@
     <label>冗余</label>
     <input type="number" id="redundancy" min="1.0" max="5.0" step="0.1" value="2.0" style="width: 60px;" title="fountain code 冗余倍数. libcimbar 作者 confirms no penalty for higher values (sz3/libcimbar#165): 多余冗余只增加发送端发帧总数, 不影响 CFC 接收完成时间. 推荐: 1.5x 安全 / 2x 默认 / 3-4x 极端环境">
     <span id="throughputHint" title="物理上限 = FPS × 7500 B; 区间下限 = 上限 / 冗余 (跑满冗余时的有效吞吐). 实测受光线/对焦影响" style="color: #5fbcff; font-size: 12px; white-space: nowrap;">预期 ~73–110 KB/s</span>
-    <label title="锁定: 发送端不自动 advance, 反复发当前块的新 fountain 帧, 让 CFC 弹保存窗时屏幕一定是该块; 配合 ✅ 主按钮使用">
-      <input type="checkbox" id="lockToCurrent"> 🔒锁定当前块
-    </label>
     <button id="btnStart" disabled>开始传输</button>
     <button id="btnStop" class="stop" disabled>停止</button>
     <button id="btnDebug" title="切换日志显示">🐛</button>
   </div>
 </div>
 
-<div id="stage">
+<div id="main">
   <div id="dropzone">
     <div class="icon">📁</div>
     <div class="hint">拖入文件 / 点击选择</div>
     <div class="sub">任意大小，会自动切成 10 MB 的块依次发送</div>
     <input type="file" id="fileInput" style="display:none;">
   </div>
-  <canvas id="canvas"></canvas>
-</div>
 
-<div id="chunkJumpBar"></div>
-
-<div id="chunkConfirm">
-  <button id="btnConfirmChunk" type="button" class="primary">✅ 已保存这一块 → 跳下一未完成</button>
-  <span class="stats" id="confirmStats">0 / 0 已保存</span>
-  <span class="hint">📱 CFC 弹出"保存到哪里"对话框并完成保存后, 点这个按钮标记当前块为已保存并跳到下一个未完成块</span>
-  <button id="btnResetCompleted" type="button" class="secondary" title="清空当前文件的已保存进度">↺ 清空</button>
-</div>
-
-<div id="progress">
-  <div id="p_hint" style="margin-bottom: 6px; color: #f5b942; font-weight: 500; text-align: center;">
-    💡 等手机 CFC 弹出 <span id="p_savecount" style="color: #5fbcff; font-size: 14px;">—</span> 次"保存到哪里"对话框（每次都选同一个目录）后即可点停止
+  <div id="left-panel" class="side-panel">
+    <div class="file-meta">
+      <div class="mrow"><span>文件</span><b id="m_filename">—</b></div>
+      <div class="mrow"><span>大小</span><b id="m_filesize">—</b></div>
+      <div class="mrow"><span>SHA256</span><b id="m_filehash">—</b></div>
+      <div class="mrow"><span>📱 手机应收</span><b id="m_chunkcount">—</b></div>
+      <div class="mrow"><span>encode_id</span><b id="m_encodeid">—</b></div>
+    </div>
+    <div class="panel-title" id="jumpTitle">跳转目标 <span class="sub">单击跳 · 双击锁 🔒</span></div>
+    <div id="chunkJumpBar"></div>
   </div>
-  <div class="row">
-    <span><span class="label">当前块:</span> <span class="value" id="p_chunk">—</span></span>
-    <span><span class="label">本块帧数:</span> <span class="value" id="p_frame">—</span></span>
-    <span><span class="label">总进度:</span> <span class="value" id="p_total">0%</span></span>
-    <span><span class="label">已用:</span> <span class="value" id="p_elapsed">—</span></span>
-    <span><span class="label">剩余:</span> <span class="value" id="p_eta">—</span></span>
+
+  <div id="center">
+    <canvas id="canvas"></canvas>
   </div>
-  <div class="bar-bg"><div class="bar-fg" id="p_bar"></div></div>
+
+  <div id="right-panel" class="side-panel">
+    <div id="chunkConfirm">
+      <button id="btnConfirmChunk" type="button" class="primary">✅ 已保存, 跳下一块</button>
+      <span class="stats" id="confirmStats">0 / 0 已保存</span>
+      <span class="hint">📱 CFC 弹出"保存到哪里"对话框并完成保存后, 点这个按钮标记当前块为已保存并跳到下一个未完成块</span>
+      <button id="btnResetCompleted" type="button" class="secondary" title="清空当前文件的已保存进度">↺ 清空</button>
+    </div>
+
+    <div id="progress">
+      <div id="p_hint" style="margin-bottom: 6px; color: #f5b942; font-weight: 500; text-align: center;">
+        💡 等手机 CFC 弹出 <span id="p_savecount" style="color: #5fbcff; font-size: 14px;">—</span> 次"保存到哪里"对话框（每次都选同一个目录）后即可点停止
+      </div>
+      <div class="row">
+        <span><span class="label">当前块:</span> <span class="value" id="p_chunk">—</span></span>
+        <span><span class="label">本块帧数:</span> <span class="value" id="p_frame">—</span></span>
+        <span><span class="label">总进度:</span> <span class="value" id="p_total">0%</span></span>
+        <span><span class="label">已用:</span> <span class="value" id="p_elapsed">—</span></span>
+        <span><span class="label">剩余:</span> <span class="value" id="p_eta">—</span></span>
+      </div>
+      <div class="bar-bg"><div class="bar-fg" id="p_bar"></div></div>
+    </div>
+  </div>
 </div>
 
 <div id="log"></div>
@@ -337,10 +395,15 @@ const State = {
   // 唯一可信完成信号: CFC 的 ACTION_CREATE_DOCUMENT 弹窗; 用户在 CFC 完成保存后回来点 chunkConfirm 主按钮即加入.
   // 持久化 key = filename + sha256 + chunk_size + chunk_count, 同文件刷新页面能恢复; 内容/切法变后 key 自动错位防误恢复.
   completedChunks: new Set(),
-  // 🔒 锁定当前块: advanceToNextChunk 触发时不前进 curChunkIndex, 反复 init+feed 当前 stream 生成新 fountain 帧.
-  // 作用: CFC 弹保存窗时屏幕一定还在播该块 (因为发送端不会自动 advance), 避免"屏幕≠CFC 完成块"错位.
-  // 用户主动 setJumpTarget 时锁定不阻拦 (jumpRequested 优先级 > lockToCurrent).
-  lockToCurrent: false,
+  // 🔒 锁定的 chunk index (-1 = 未锁定). 双击某块设定; advanceToNextChunk 在没有挂起 jump 时
+  // 强制 curChunkIndex 停回 lockedChunkIndex, 反复 init+feed 该 stream 生成新 fountain 帧,
+  // 使 CFC 弹保存窗时屏幕一定还在播该块, 避免"屏幕≠CFC 完成块"错位.
+  // 单击跳转(setJumpTarget)会清锁 = 自由跳到新块; 双击别块 = 转移锁; 双击已锁块 = 解锁.
+  lockedChunkIndex: -1,
+  // 锁定块的补帧轮数 (lockedChunkIndex >= 0 时累加). 与全文件级 loopCount 解耦: 锁定只在该块上加帧,
+  // 不代表"已发完一轮全文件" → 进度面板独立显示"🔒 锁定中 · 补帧 X 次", 不串入"🔁 持续传输中".
+  // 解锁/切别块/start/stop/新文件 都清零.
+  lockedRefillCount: 0,
 };
 
 const ESTIMATED_BYTES_PER_FRAME = 7500; // Mode B default ECC payload
@@ -359,38 +422,49 @@ const PRESETS = {
 let wasmReady = false;
 let _idealRatio = 1;
 
-// 移植自 vendor/cimbar-wasm-v0.6.4/main.*.js scaleCanvas
-// 不调这个 fit 逻辑, cimbar 输出长宽比与 canvas 视觉尺寸不匹配,
-// 浏览器按 max-width/height 各自独立约束会撕裂比例, CFC 扫不到 4 角定位 marker
+// 每侧(横屏)/上下(竖屏)栏的最小留白, 保证跳转列表 + 进度信息可读.
+// 宽屏 (≥ ~1334w) 用 200 桌面观感不缩; 窄屏 (低分辨率横屏/平板分屏) 按 mw 的 15% 缩放, 下限 120 兜底.
+// 120 = 按钮文字"part0001 🔒"(12px≈70px宽) + .side-panel padding 14×2 + 按钮 padding 10×2 ≈ 118, 兜底刚好容下.
+function computeMinPanel(mw) {
+  return Math.max(120, Math.min(200, mw * 0.15));
+}
+
+// 响应式布局核心: 按 #main 可用空间, 让 canvas 沿"受限维度"按 _idealRatio 最大化,
+// 同时给两侧/上下栏各留 MIN_PANEL. center 用 flex:0 0 auto 由 canvas 撑开, 两侧 flex:1 分剩余 — 无循环依赖.
+// 必须显式设宽高 (不能用 max-width/height): cimbar 比例由 wasm 决定, 各自独立约束会撕裂比例 → CFC 扫不到 4 角 marker.
 function fitCanvas() {
   const canvas = $('canvas');
-  const stage = $('stage');
-  if (!canvas || !stage) return;
-  const w = stage.clientWidth - 10;
-  const h = stage.clientHeight - 10;
-  if (w <= 0 || h <= 0) return;
+  const main = $('main');
+  if (!canvas || !main) return;
+  const mw = main.clientWidth;
+  const mh = main.clientHeight;
+  if (mw <= 0 || mh <= 0) return;
 
-  const needRotate = _idealRatio > 1 && h > w;
+  // main 更高 = 竖屏(上下栏), 更宽 = 横屏(左右栏). portrait 类让 CSS 把 #main 切成 column.
+  // 横屏但宽度放不下两侧栏 (mw-2×minPanel < 80) 时也退化为上下堆叠, 避免窄横屏三栏互相挤压不可用.
+  const minPanel = computeMinPanel(mw);
+  const portrait = mh > mw || (mw - 2 * minPanel) < 80;
+  main.classList.toggle('portrait', portrait);
+
+  const ratio = _idealRatio || 1;   // 码 宽/高 (Mode B = 1, 正方形)
   if (wasmReady && Module._cimbare_rotate_window) {
-    Module._cimbare_rotate_window(needRotate);
+    Module._cimbare_rotate_window(false);  // 正方形码无需旋转
   }
 
-  const ourRatio = needRotate ? h / w : w / h;
-  let xdim = needRotate ? h : w;
-  let ydim = needRotate ? w : h;
-  if (ourRatio > _idealRatio) {
-    xdim = Math.floor(xdim * _idealRatio / ourRatio);
-  } else if (ourRatio < _idealRatio) {
-    ydim = Math.floor(ydim * ourRatio / _idealRatio);
-  }
-
-  if (needRotate) {
-    canvas.style.width = ydim + 'px';
-    canvas.style.height = xdim + 'px';
+  let cw, ch;
+  if (!portrait) {
+    // 横屏: 高度占满, 宽 = 高×ratio, 但宽不挤占左右栏 (各留 minPanel)
+    ch = Math.min(mh, (mw - 2 * minPanel) / ratio);
+    cw = ch * ratio;
   } else {
-    canvas.style.width = xdim + 'px';
-    canvas.style.height = ydim + 'px';
+    // 竖屏: 宽度占满, 高 = 宽/ratio, 但高不挤占上下栏 (各留 minPanel)
+    cw = Math.min(mw, (mh - 2 * minPanel) * ratio);
+    ch = cw / ratio;
   }
+  cw = Math.max(80, Math.floor(cw));
+  ch = Math.max(80, Math.floor(ch));
+  canvas.style.width = cw + 'px';
+  canvas.style.height = ch + 'px';
 }
 
 window.addEventListener('resize', fitCanvas);
@@ -492,6 +566,8 @@ async function prepareFile(file) {
     State.file = null;
     State.simpleMode = false;
     State.jumpRequested = null;
+    State.lockedChunkIndex = -1;
+    State.lockedRefillCount = 0;
     State.completedChunks = new Set();
     $('btnStart').disabled = true;
 
@@ -559,6 +635,10 @@ async function prepareFile(file) {
     State.manifest = null;
     State.manifestBytes = null;
     State.file = null;
+    State.simpleMode = false;
+    State.jumpRequested = null;
+    State.lockedChunkIndex = -1;
+    State.lockedRefillCount = 0;
     State.completedChunks = new Set();
     $('m_filename').textContent = '—';
     $('m_filesize').textContent = '—';
@@ -585,6 +665,8 @@ function startTransmission() {
   State.startTime = performance.now();
   State.curChunkIndex = -1;
   State.jumpRequested = null;
+  State.lockedChunkIndex = -1;
+  State.lockedRefillCount = 0;
   State.totalFramesSent = 0;
   State.loopCount = 0;
   State.lastUiUpdate = 0;
@@ -602,7 +684,7 @@ function startTransmission() {
   $('btnStart').disabled = true;
   $('btnStop').disabled = false;
   $('chunkSize').disabled = true;
-  // progress 显示后 stage 高度变化, canvas 必须重新 fit, 否则底部 marker 被遮挡 → CFC 扫不到
+  // dropzone 隐藏 + 三栏显示后布局落定, canvas 必须重新 fit, 否则尺寸/marker 不对 → CFC 扫不到
   requestAnimationFrame(fitCanvas);
   log(`Starting transmission, interval=${State.interval}ms, redundancy=${State.redundancy}x, mode=${State.simpleMode ? 'simple' : 'multi'}`, 'ok');
   advanceToNextChunk();
@@ -612,6 +694,8 @@ function startTransmission() {
 function stopTransmission() {
   State.active = false;
   State.jumpRequested = null;
+  State.lockedChunkIndex = -1;
+  State.lockedRefillCount = 0;
   if (State.timer) {
     clearTimeout(State.timer);
     State.timer = null;
@@ -630,46 +714,93 @@ function stopTransmission() {
   log('Stopped. 拖入新文件换文件, 或再点开始继续当前文件', 'ok');
 }
 
-// ============= 跳转按钮组 (multi 模式专用) =============
-// 用户在保存了某 chunk 后, 主动点下一个目标 chunk 让发送方专心播放它,
-// 让 CFC 扫到的必然是目标 chunk, 消除随机扫描等待.
-// simpleMode 下整个按钮组隐藏 (单 stream 跳转无意义).
+// ============= 跳转目标列表 (multi 模式专用) =============
+// 左栏垂直按钮列表. 单击 = 跳转到该块(自由模式), 双击 / Shift+点击(键盘等效) = 锁定该块(发送端停在此块反复补帧).
+// 让 CFC 扫到的必然是目标块, 消除随机扫描等待. simpleMode 下隐藏 (单 stream 跳转无意义).
+let _clickTimer = null;  // 区分单击/双击: 单击延迟 500ms 执行 (对齐 Windows 系统 dblclick 阈值上限), 双击到来则取消
+
 function renderJumpButtons() {
   const bar = $('chunkJumpBar');
+  clearTimeout(_clickTimer); _clickTimer = null;   // 重建按钮前丢弃挂起的单击, 防旧 idx 的 setJumpTarget 迟到误跳 (如单击后立刻点✅)
   if (State.simpleMode || State.chunks.length === 0) {
     bar.classList.remove('visible');
     bar.innerHTML = '';
+    $('jumpTitle').style.display = 'none';   // simpleMode 无跳转概念, 连标题一起隐藏, 避免空标题悬着
     return;
   }
+  $('jumpTitle').style.display = '';
   const total = 1 + State.chunks.length;       // 0 = manifest, 1..N = 数据块
-  const padW = State.chunks.length < 100 ? 2 : (State.chunks.length < 1000 ? 3 : 4);
-  const parts = ['<span class="label">跳转:</span>'];
+  const parts = [];
+  // title 让鼠标 hover 看到完整交互说明, 键盘/屏读用户通过 tab focus + accessible name 也能读出
+  const titleAttr = ' title="单击跳转 · 双击或 Shift+点击 锁定 🔒"';
   for (let i = 0; i < total; i++) {
-    const text = i === 0 ? 'manifest' : `part${String(i - 1).padStart(padW, '0')}`;
     const dis = State.active ? '' : ' disabled';
-    const cls = State.completedChunks.has(i) ? ' class="completed"' : '';
-    parts.push(`<button type="button"${cls} data-idx="${i}"${dis}>${text}</button>`);
+    parts.push(`<button type="button" data-idx="${i}"${dis}${titleAttr}></button>`);
   }
   bar.innerHTML = parts.join('');
   bar.classList.add('visible');
   bar.querySelectorAll('button[data-idx]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      setJumpTarget(parseInt(btn.dataset.idx, 10));
+    const idx = parseInt(btn.dataset.idx, 10);
+    btn.addEventListener('click', (e) => {
+      if (e.detail > 1) return;   // 多击序列的第 2+ 次: 不武装单击定时器, 交给 dblclick (避免与锁定竞态/双击前闪跳)
+      // Shift+Click 等效双击锁定 — 给键盘用户 (Tab + Shift+Enter) 一条可达的锁定路径
+      if (e.shiftKey) {
+        clearTimeout(_clickTimer); _clickTimer = null;
+        lockChunk(idx);
+        return;
+      }
+      clearTimeout(_clickTimer);
+      // 500ms 对齐 Windows 系统 dblclick 阈值上限 (250ms 太短: 第二次 click 间隔 250-500ms 时
+      // 单击定时器已触发 setJumpTarget(清锁+跳), 接着 dblclick 派发 lockChunk → 视觉抖动)
+      _clickTimer = setTimeout(() => { _clickTimer = null; setJumpTarget(idx); }, 500);
+    });
+    btn.addEventListener('dblclick', () => {
+      clearTimeout(_clickTimer); _clickTimer = null;
+      lockChunk(idx);
     });
   });
+  renderChunkButtonStates();  // 填入文案 + 初始状态 (completed / locked 等)
 }
 
+// 单击: 跳转到 idx 并进入自由模式 (清除锁定). 立即 advance 切换, active 高亮随即跟到该块 = 屏幕实际播放.
 function setJumpTarget(idx) {
   if (!State.active) return;
   State.jumpRequested = idx;
-  log(`Jump request: chunk ${idx}`, 'ok');
-  highlightActiveJumpBtn(idx);
+  State.lockedChunkIndex = -1;
+  State.lockedRefillCount = 0;
+  log(`跳转到 ${chunkIndexLabel(idx)}`, 'ok');
+  advanceToNextChunk();   // 立即切换, 不等当前块发完估算帧 — 否则 10MB 块要等数分钟才换 (即"点了不动")
 }
 
-function highlightActiveJumpBtn(idx) {
+// 双击: 切换锁定. 双击已锁块 = 解锁; 双击其他块 = 锁定它(并跳过去, 转移锁).
+function lockChunk(idx) {
+  if (!State.active) return;
+  if (State.lockedChunkIndex === idx) {
+    State.lockedChunkIndex = -1;
+    State.lockedRefillCount = 0;
+    log(`🔓 解锁 ${chunkIndexLabel(idx)}, 恢复自由循环`, 'ok');
+    renderChunkButtonStates();
+  } else {
+    State.lockedChunkIndex = idx;
+    State.lockedRefillCount = 0;   // 切到新锁定块, 补帧计数从 0 重新开始
+    State.jumpRequested = idx;
+    log(`🔒 锁定 ${chunkIndexLabel(idx)}, 发送端停在该块反复补帧`, 'ok');
+    advanceToNextChunk();   // 立即切到并锁定
+  }
+}
+
+// 统一渲染所有按钮状态. active 严格跟随 State.curChunkIndex (真正在播的块) — 单击/双击都立即 advance,
+// 切换瞬时完成, 故 active 永远 = 屏幕实际播放, 无显示超前歧义. locked 跟随 lockedChunkIndex.
+function renderChunkButtonStates() {
   const bar = $('chunkJumpBar');
+  if (!bar) return;
   bar.querySelectorAll('button[data-idx]').forEach(btn => {
-    btn.classList.toggle('active', parseInt(btn.dataset.idx, 10) === idx);
+    const i = parseInt(btn.dataset.idx, 10);
+    const isLocked = i === State.lockedChunkIndex;
+    btn.classList.toggle('active', i === State.curChunkIndex);
+    btn.classList.toggle('locked', isLocked);
+    btn.classList.toggle('completed', State.completedChunks.has(i));
+    btn.textContent = chunkIndexLabel(i) + (isLocked ? ' 🔒' : '');
   });
 }
 
@@ -735,13 +866,18 @@ function chunkIndexLabel(idx) {
 
 function markCurrentChunkCompleted() {
   if (!State.active || State.simpleMode) return;
+  // [P2 codex] 显式清挂起的单击定时器: C2 换用 renderChunkButtonStates 后丢失了原 renderJumpButtons 头部的 clearTimeout 兜底.
+  // race 路径: 用户点别块 (装 500ms timer) → 500ms 内点 ✅ → setJumpTarget(next) 跳下一未完成 → 500ms 后 stale timer 覆盖回旧 idx.
+  clearTimeout(_clickTimer); _clickTimer = null;
   const cur = State.curChunkIndex;
   if (cur < 0) return;
   const total = 1 + State.chunks.length;
   State.completedChunks.add(cur);
   saveCompletedToStorage();
   log(`已标记 "${chunkIndexLabel(cur)}" 为已保存 (${State.completedChunks.size}/${total})`, 'ok');
-  renderJumpButtons();
+  // 只改 completedChunks 状态, 用 renderChunkButtonStates 轻量同步 class/textContent;
+  // 不调 renderJumpButtons 重建 DOM, 否则会丢挂起的单击定时器 + 50 块时重绑 listener 有 jank.
+  renderChunkButtonStates();
   updateConfirmStats();
 
   // 从 cur+1 开始环形查找下一个未完成块
@@ -754,9 +890,7 @@ function markCurrentChunkCompleted() {
     log('✅ 全部块都已标记为已保存! 现在可以点"停止"了～', 'ok');
     return;
   }
-  setJumpTarget(next);
-  // 立即 advance, 不等当前 chunk 把估算帧数发完 — 用户已确认 CFC 收到了, 继续发当前块是浪费
-  advanceToNextChunk();
+  setJumpTarget(next);   // setJumpTarget 内部已立即 advance — 用户已确认收到, 不等当前块发完估算帧
 }
 
 function resetCompleted() {
@@ -765,33 +899,39 @@ function resetCompleted() {
     log('当前没有已保存的块', 'warn');
     return;
   }
+  // [P2 codex] 同 markCurrentChunkCompleted: 用户点 reset 时挂起的单击不应继续生效
+  clearTimeout(_clickTimer); _clickTimer = null;
   const prevCount = State.completedChunks.size;
   State.completedChunks = new Set();
   saveCompletedToStorage();
-  renderJumpButtons();
+  // 同上: 只改状态用 renderChunkButtonStates, 不重建 DOM
+  renderChunkButtonStates();
   updateConfirmStats();
   log(`已清空 ${prevCount} 块已保存标记`, 'ok');
 }
 
 function advanceToNextChunk() {
-  // 跳转处理: 用户点了某 chunk 按钮 → 强制把 curChunkIndex 设为 target-1,
-  // 让下一行 += 1 自然命中 target. simpleMode 下按钮组隐藏不可能触发, 但仍兜底清空.
-  // 跳转优先级 > 锁定: 用户主动 setJumpTarget 时锁定不阻拦, 让"改变目标"能即时生效.
+  // 跳转处理: jumpRequested 非空 → 强制把 curChunkIndex 设为 target-1, 让下一行 += 1 自然命中 target.
+  // simpleMode 下按钮组隐藏不可能触发, 但仍兜底清空. 跳转优先级 > 锁定.
   if (State.jumpRequested !== null) {
     if (!State.simpleMode) {
       const target = State.jumpRequested;
       State.curChunkIndex = target - 1;
-      log(`>>> Jumping to chunk index ${target}`, 'ok');
+      log(`>>> 跳转到 ${chunkIndexLabel(target)}`, 'ok');
     }
     State.jumpRequested = null;
-  } else if (State.lockToCurrent && !State.simpleMode && State.curChunkIndex >= 0) {
-    // 🔒 锁定模式 + 没有挂起跳转: curChunkIndex -= 1 中和下面的 += 1, 让索引保持不变.
-    // 后续仍走 init+feed 重新喂 wasm encoder, 让 CFC 持续收到当前 stream 的新 fountain 帧.
-    // 这样 CFC 弹保存窗时屏幕一定是该块, 用户点 ✅ 标记的就是 CFC 实际保存的块.
-    const lockedLabel = chunkIndexLabel(State.curChunkIndex);
-    State.curChunkIndex -= 1;
-    State.loopCount = (State.loopCount || 0) + 1;
-    log(`🔒 Locked on ${lockedLabel}, re-feeding fountain (round ${State.loopCount})`, 'ok');
+  } else if (State.lockedChunkIndex >= 0 && !State.simpleMode) {
+    // 🔒 锁定 + 无挂起跳转: 强制停回 lockedChunkIndex (而非随当前块), 重新 init+feed 该 stream 生成新 fountain 帧.
+    // 这样 CFC 弹保存窗时屏幕一定还在播该块, 用户点 ✅ 标记的就是 CFC 实际保存的块.
+    // 用 lockedRefillCount 而非 loopCount: 锁定只在该块上加帧, 不代表"已发完一轮全文件",
+    // 进度面板因此可区分"🔒 锁定中"和"🔁 全文件循环补帧中", 不再混语义.
+    State.curChunkIndex = State.lockedChunkIndex - 1;
+    State.lockedRefillCount += 1;
+    // 长时间锁定时每轮 advanceToNextChunk 都打 log 会刷屏 (10MB 块 ~150 帧 @15fps = 10s/轮 → 10 分钟刷 60 行);
+    // 关键节点 (第 1 轮 + 每 10 轮) 打 log 即可, 进度面板的 p_eta 始终显示实时补帧次数兜底.
+    if (State.lockedRefillCount === 1 || State.lockedRefillCount % 10 === 0) {
+      log(`🔒 锁定 ${chunkIndexLabel(State.lockedChunkIndex)}, 补帧第 ${State.lockedRefillCount} 轮`, 'ok');
+    }
   }
 
   State.curChunkIndex += 1;
@@ -839,8 +979,9 @@ function advanceToNextChunk() {
     log(`>>> Chunk ${dataIdx + 1}/${State.chunks.length} "${partName}" (${fmtBytes(chunk.length)}, ~${State.framesNeededInChunk} frames)`, 'ok');
   }
 
-  // 按钮组高亮跟随当前 chunk (跳转 / 自然推进 / 循环回 manifest 三种情况都同步)
-  highlightActiveJumpBtn(State.curChunkIndex);
+  // 按钮状态跟随当前实际播放的 chunk (跳转 / 自然推进 / 循环回 manifest / 锁定补帧都同步).
+  // active 在此刻才点亮 = 真正切到该块, 与屏幕实际播放严格一致, 无显示超前歧义.
+  renderChunkButtonStates();
 }
 
 function stripExt(filename) {
@@ -881,6 +1022,9 @@ function updateUiState() {
 }
 
 function updateProgressUI() {
+  // active 守卫 belt-and-suspenders: lockedChunkIndex 只在传输中有意义, 非 active 时即使残留 >=0 也不应进入锁定分支
+  const isLocked = State.active && State.lockedChunkIndex >= 0 && !State.simpleMode;
+
   let curHuman;
   if (State.simpleMode) {
     curHuman = `1/1${State.loopCount > 0 ? ` (第 ${State.loopCount + 1} 轮)` : ''}`;
@@ -889,14 +1033,21 @@ function updateProgressUI() {
   } else {
     curHuman = `${State.curChunkIndex}/${State.chunks.length}${State.loopCount > 0 ? ` (第 ${State.loopCount + 1} 轮)` : ''}`;
   }
+  // 锁定状态集中在 p_total ("🔒 锁定 partXX") + p_eta ("补帧 N 轮"), p_chunk 不再重复加 🔒×N 减视觉噪声
   $('p_chunk').textContent = curHuman;
   $('p_frame').textContent = `${State.framesInChunk}/${State.framesNeededInChunk}`;
 
-  // 总进度只在第一轮有意义；循环中显示"持续传输中"
+  // 三态语义: 锁定中(忽略全文件进度) → 已循环过(已过首轮) → 首轮(显示真实%/ETA)
   const elapsedMs = performance.now() - State.startTime;
   $('p_elapsed').textContent = fmtTime(elapsedMs);
 
-  if (State.loopCount === 0) {
+  if (isLocked) {
+    // 锁定模式: 全文件进度此时无意义 (用户已显式让发送端专攻一块, 不再均匀推进各 chunk).
+    // 进度条占满 + 文案显式说明锁定状态, 防止与"🔁 持续传输中"(全文件循环)混淆.
+    $('p_total').textContent = `🔒 锁定 ${chunkIndexLabel(State.lockedChunkIndex)}`;
+    $('p_bar').style.width = '100%';
+    $('p_eta').textContent = `补帧 ${State.lockedRefillCount} 轮, 解锁/切别块即可继续`;
+  } else if (State.loopCount === 0) {
     const pct = Math.min(100, (State.totalFramesSent / State.totalFramesNeeded) * 100);
     $('p_total').textContent = pct.toFixed(1) + '%';
     $('p_bar').style.width = pct + '%';
@@ -908,7 +1059,7 @@ function updateProgressUI() {
   } else {
     $('p_total').textContent = '🔁 持续传输中';
     $('p_bar').style.width = '100%';
-    $('p_eta').textContent = '循环补帧中，可随时停止';
+    $('p_eta').textContent = '循环补帧中, 可随时停止';
   }
 }
 
@@ -958,10 +1109,6 @@ $('btnStop').addEventListener('click', stopTransmission);
 $('btnDebug').addEventListener('click', () => $('log').classList.toggle('active'));
 $('btnConfirmChunk').addEventListener('click', markCurrentChunkCompleted);
 $('btnResetCompleted').addEventListener('click', resetCompleted);
-$('lockToCurrent').addEventListener('change', (e) => {
-  State.lockToCurrent = e.target.checked;
-  log(`🔒 锁定当前块: ${State.lockToCurrent ? 'ON (发送端将停在当前块不自动 advance)' : 'OFF (fountain 自由循环所有块)'}`, 'ok');
-});
 
 $('preset').addEventListener('change', (e) => applyPreset(e.target.value));
 // 用户手动改 → 切到 custom 表明已经偏离预设; setValue (applyPreset) 不会触发 input 事件, 不会循环
