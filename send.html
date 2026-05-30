@@ -866,6 +866,9 @@ function chunkIndexLabel(idx) {
 
 function markCurrentChunkCompleted() {
   if (!State.active || State.simpleMode) return;
+  // [P2 codex] 显式清挂起的单击定时器: C2 换用 renderChunkButtonStates 后丢失了原 renderJumpButtons 头部的 clearTimeout 兜底.
+  // race 路径: 用户点别块 (装 500ms timer) → 500ms 内点 ✅ → setJumpTarget(next) 跳下一未完成 → 500ms 后 stale timer 覆盖回旧 idx.
+  clearTimeout(_clickTimer); _clickTimer = null;
   const cur = State.curChunkIndex;
   if (cur < 0) return;
   const total = 1 + State.chunks.length;
@@ -896,6 +899,8 @@ function resetCompleted() {
     log('当前没有已保存的块', 'warn');
     return;
   }
+  // [P2 codex] 同 markCurrentChunkCompleted: 用户点 reset 时挂起的单击不应继续生效
+  clearTimeout(_clickTimer); _clickTimer = null;
   const prevCount = State.completedChunks.size;
   State.completedChunks = new Set();
   saveCompletedToStorage();
