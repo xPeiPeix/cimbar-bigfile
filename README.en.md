@@ -33,16 +33,30 @@ The receiver uses sz3's **CameraFileCopy (CFC)** Android app to scan; CFC's buil
 3. Click "Start" — the screen begins playing the colored-barcode animation
 4. **Keep the screen still until all chunks are sent**
 
-#### 💡 Speed up reception: manual chunk jumping
+#### 💡 Speed up reception: jump · lock · confirm-saved
 
-In multi-chunk mode (large files), a row of jump buttons appears at the bottom of the page (`manifest` / `part00` / `part01` / ...).
-The default sender behavior cycles `manifest → part00 → part01 → ... → loop back to manifest`, and CFC happens to scan whichever chunk is currently on-screen — total scan time for a 100MB file is roughly **~55 minutes**.
+In multi-chunk mode (large files), the sender UI switches to a **three-column responsive layout**: left = jump list, center = cimbar code canvas, right = ✅ confirm-saved button + progress panel.
 
-**How to use**: every time CFC pops up the "save where" dialog and you finish saving a chunk, **immediately click the next target chunk button on the sender page**. The sender will commit to broadcasting that single chunk, and the next thing CFC scans is guaranteed to be it.
+![Sender UI overview](docs/screenshots/send-ui-overview.png)
+
+The **default sender behavior** cycles `manifest → part00 → part01 → ... → loop back to manifest`, and CFC happens to scan whichever chunk is currently on-screen — total scan time for a 100MB file is roughly **~55 minutes**.
+
+**Three controls eliminate the wait**:
+
+| Action | Effect | Trigger |
+|---|---|---|
+| **Single-click a chunk button** | Jump to that chunk immediately (clears any lock, resumes free loop) | Mouse click / Tab + Enter |
+| **Double-click a chunk button** | 🔒 Lock to that chunk (sender stays on it, fountain keeps emitting new frames, CFC's next scan is guaranteed to land on it); double-click again or click another = transfer / unlock | Mouse double-click / Tab + **Shift+Enter** (keyboard equivalent) |
+| **✅ Saved, jump to next** (green primary button in right panel) | Mark the current chunk as saved (persisted to localStorage) + auto-jump to the next unsaved chunk | Click it after CFC's "save where" dialog completes |
+
+Button visual states (left column in screenshot):
+- 🟢 `✓ prefix + green background` = confirmed saved
+- 🔵 `blue background` = currently playing on screen (active)
+- 🟡 `amber tint + 🔒` = double-click locked; the progress panel mirrors this as "🔒 Locked partXX · refill N rounds"
 
 **Expected gain**: scan time for a 100MB file drops from **~55 min** to **~17 min** (random-scan wait eliminated).
 
-> simpleMode (small files ≤ chunk size, single-stream direct send) does not show jump buttons — there is only 1 stream, so jumping is meaningless.
+> simpleMode (small files ≤ chunk size, single-stream direct send) hides the jump list — there is only 1 stream, so jumping is meaningless.
 
 ### Receiving
 
