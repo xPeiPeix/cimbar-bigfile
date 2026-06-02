@@ -180,8 +180,9 @@ async function ingest(files) {
     State.files.push(f);
   }
   await classifyFiles();
-  renderFileList();
   await tryParseManifest();
+  await recoverPartFilesFromManifest();
+  renderFileList();
   renderInfo();
   $('btnReassemble').disabled = !canReassemble();
   $('btnClear').disabled = State.files.length === 0;
@@ -211,30 +212,93 @@ async function classifyFiles() {
 
 async function tryParseManifest() {
   if (!State.manifestFile) {
+    for (const f of State.unknownFiles) {
+      const m = await parseManifestCandidate(f);
+      if (m) {
+        State.manifestFile = f;
+        State.manifest = m;
+        State.unknownFiles = State.unknownFiles.filter(x => x !== f);
+        log(`Manifest recovered by content from "${f.name}"`, 'warn');
+        log(`Manifest OK: ${m.filename}, ${fmtBytes(m.total_size)}, ${m.chunk_count} chunks`, 'ok');
+        return;
+      }
+    }
     State.manifest = null;
     return;
   }
+  const m = await parseManifestCandidate(State.manifestFile);
+  if (m) {
+    State.manifest = m;
+    log(`Manifest OK: ${m.filename}, ${fmtBytes(m.total_size)}, ${m.chunk_count} chunks`, 'ok');
+  } else {
+    State.manifest = null;
+  }
+}
+
+async function parseManifestCandidate(file) {
+  if (file.size > 1024 * 1024) return null;
   try {
-    const txt = await State.manifestFile.text();
+    const txt = await file.text();
     const m = JSON.parse(txt);
     if (m.tool !== 'cimbar-bigfile') {
       log(`Manifest.tool="${m.tool}", expected "cimbar-bigfile". Continuing anyway.`, 'warn');
     }
     if (m.version !== 1) {
       log(`Unsupported manifest version: ${m.version}. This tool understands version 1.`, 'err');
-      State.manifest = null;
-      return;
+      return null;
     }
     if (!Array.isArray(m.chunks) || m.chunks.length !== m.chunk_count) {
       log(`Malformed manifest: chunks array length ${m.chunks?.length} != chunk_count ${m.chunk_count}`, 'err');
-      State.manifest = null;
-      return;
+      return null;
     }
-    State.manifest = m;
-    log(`Manifest OK: ${m.filename}, ${fmtBytes(m.total_size)}, ${m.chunk_count} chunks`, 'ok');
+    return m;
   } catch (e) {
-    log(`Failed to parse manifest: ${e.message}`, 'err');
-    State.manifest = null;
+    if (/^manifest\.json$/i.test(file.name)) {
+      log(`Failed to parse manifest: ${e.message}`, 'err');
+    }
+    return null;
+  }
+}
+
+async function recoverPartFilesFromManifest() {
+  if (!State.manifest) return;
+
+  const known = new Set([State.manifestFile, ...State.partFiles.values()]);
+  const candidates = State.files.filter(f => !known.has(f));
+  const missing = new Map();
+  for (let i = 0; i < State.manifest.chunk_count; i++) {
+    if (!State.partFiles.has(i)) {
+      const chunk = State.manifest.chunks[i];
+      missing.set(i, chunk);
+    }
+  }
+  if (missing.size === 0) {
+    State.unknownFiles = candidates;
+    return;
+  }
+
+  let recovered = 0;
+  for (const f of candidates) {
+    const matchesBySize = Array.from(missing.entries()).filter(([, chunk]) => chunk.size === f.size);
+    if (matchesBySize.length === 0) continue;
+
+    const bytes = new Uint8Array(await f.arrayBuffer());
+    const sha = await sha256Hex(bytes);
+    const match = matchesBySize.find(([, chunk]) => chunk.sha256 === sha);
+    if (!match) continue;
+
+    const [idx] = match;
+    State.partFiles.set(idx, f);
+    missing.delete(idx);
+    recovered++;
+  }
+
+  State.unknownFiles = State.files.filter(f => {
+    if (f === State.manifestFile) return false;
+    return !Array.from(State.partFiles.values()).includes(f);
+  });
+  if (recovered > 0) {
+    log(`Recovered ${recovered} part file(s) by size + SHA256`, 'warn');
   }
 }
 
