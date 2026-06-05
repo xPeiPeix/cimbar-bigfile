@@ -33,6 +33,14 @@ The receiver uses sz3's **CameraFileCopy (CFC)** Android app to scan; CFC's buil
 3. Click "Start" — the screen begins playing the colored-barcode animation
 4. **Keep the screen still until all chunks are sent**
 
+You can also collect ad-hoc content on the sender page before sending:
+
+- `Ctrl+V` pasted text becomes a staged `clipboard-*.txt` file
+- `Ctrl+V` pasted files, or "Add files" / "Add folder", appends items to the staged list
+- "Pack and start" creates a local `cimbar-bundle-*.tar` archive in the browser and immediately sends it through the normal flow
+
+Packing is fully local in the browser; nothing is uploaded. The archive is an uncompressed `.tar`, extractable with Windows `tar`, 7-Zip, and similar tools.
+
 #### 💡 Speed up reception: jump · lock · confirm-saved
 
 In multi-chunk mode (large files), the sender UI switches to a **three-column responsive layout**: left = jump list, center = cimbar code canvas, right = ✅ confirm-saved button + progress panel.

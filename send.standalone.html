@@ -87,6 +87,54 @@
     #dropzone .icon { font-size: 48px; opacity: 0.5; }
     #dropzone .hint { color: #aaa; }
     #dropzone .sub { font-size: 12px; color: #777; }
+    #dropzone .actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+    #dropzone .actions button {
+      padding: 7px 12px; border: 1px solid #4b6385; border-radius: 4px;
+      background: rgba(45, 70, 105, 0.9); color: #e0e0e0; cursor: pointer;
+      font-size: 13px; font-family: inherit;
+    }
+    #dropzone .actions button:hover:not(:disabled) { border-color: #5fbcff; color: #fff; }
+    #dropzone .actions button.primary { background: #4a90e2; border-color: #5fbcff; color: #fff; }
+    #dropzone .actions button:disabled { opacity: 0.5; cursor: not-allowed; }
+    #bundlePanel {
+      width: min(720px, calc(100% - 48px)); max-height: 34vh; overflow: hidden;
+      display: none; flex-direction: column; gap: 6px;
+    }
+    #bundlePanel.visible { display: flex; }
+    #bundleSummary { font-size: 12px; color: #9fb8d8; text-align: center; }
+    #bundleList {
+      overflow-y: auto; border: 1px solid rgba(95,188,255,0.25); border-radius: 6px;
+      background: rgba(0,0,0,0.22);
+    }
+    #bundleList .item {
+      display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: center;
+      padding: 6px 10px; border-bottom: 1px solid rgba(255,255,255,0.08);
+      font-size: 12px;
+    }
+    #bundleList .item:last-child { border-bottom: none; }
+    #bundleList .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #e0e0e0; }
+    #bundleList .size { color: #aaa; font-variant-numeric: tabular-nums; }
+    #preparedPanel {
+      width: min(720px, calc(100% - 48px)); display: none;
+      border: 1px solid rgba(95,188,255,0.35); border-radius: 6px;
+      background: rgba(0,0,0,0.26); padding: 10px 12px;
+    }
+    #preparedPanel.visible { display: block; }
+    #preparedTitle { color: #5fbcff; font-size: 13px; font-weight: 600; margin-bottom: 8px; }
+    #preparedMeta {
+      display: grid; grid-template-columns: auto 1fr; gap: 5px 12px;
+      font-size: 12px; align-items: baseline;
+    }
+    #preparedMeta .k { color: #888; }
+    #preparedMeta .v { color: #e0e0e0; overflow-wrap: anywhere; }
+    #preparedMeta .hash { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; color: #9fb8d8; }
+    #preparedActions { display: flex; justify-content: flex-end; margin-top: 10px; }
+    #preparedActions button {
+      padding: 7px 14px; border: 1px solid #5fbcff; border-radius: 4px;
+      background: #4a90e2; color: #fff; cursor: pointer; font-size: 13px; font-family: inherit;
+    }
+    #preparedActions button:hover:not(:disabled) { background: #5fa3f5; }
+    #preparedActions button:disabled { background: #555; border-color: #555; cursor: not-allowed; opacity: 0.6; }
     #dropzone.hidden { display: none; }
 
     /* canvas 显式尺寸由 fitCanvas() 计算，不能用 max-width/height
@@ -284,9 +332,33 @@
 <div id="main">
   <div id="dropzone">
     <div class="icon">📁</div>
-    <div class="hint">拖入文件 / 点击选择</div>
-    <div class="sub">任意大小，会自动切成 10 MB 的块依次发送</div>
+    <div class="hint">拖入单文件 / 点击选择 / Ctrl+V 暂存</div>
+    <div class="sub">文本会自动保存为 txt；多个文件或文件夹可先暂存，再打包发送</div>
+    <div class="actions">
+      <button id="btnAddFiles" type="button">添加文件</button>
+      <button id="btnAddFolder" type="button">添加文件夹</button>
+      <button id="btnSendBundle" type="button" class="primary" disabled>打包并开始传输</button>
+      <button id="btnClearBundle" type="button" disabled>清空暂存</button>
+    </div>
+    <div id="bundlePanel">
+      <div id="bundleSummary">暂存 0 项</div>
+      <div id="bundleList"></div>
+    </div>
+    <div id="preparedPanel">
+      <div id="preparedTitle">已准备发送</div>
+      <div id="preparedMeta">
+        <span class="k">文件</span><span class="v" id="preparedName">—</span>
+        <span class="k">大小</span><span class="v" id="preparedSize">—</span>
+        <span class="k">SHA256</span><span class="v hash" id="preparedHash">—</span>
+        <span class="k">发送</span><span class="v" id="preparedMode">—</span>
+      </div>
+      <div id="preparedActions">
+        <button id="btnStartPrepared" type="button" disabled>开始传输</button>
+      </div>
+    </div>
     <input type="file" id="fileInput" style="display:none;">
+    <input type="file" id="bundleFileInput" multiple style="display:none;">
+    <input type="file" id="bundleDirInput" webkitdirectory multiple style="display:none;">
   </div>
 
   <div id="left-panel" class="side-panel">
@@ -404,6 +476,7 @@ const State = {
   // 不代表"已发完一轮全文件" → 进度面板独立显示"🔒 锁定中 · 补帧 X 次", 不串入"🔁 持续传输中".
   // 解锁/切别块/start/stop/新文件 都清零.
   lockedRefillCount: 0,
+  bundleItems: [],     // Array<{ path: string, file: File }>
 };
 
 const ESTIMATED_BYTES_PER_FRAME = 7500; // Mode B default ECC payload
@@ -418,9 +491,222 @@ const PRESETS = {
   conservative: { fps: 12, redundancy: 3.0 },
 };
 
+// ============= 剪贴板暂存 + tar 打包 =============
+const TAR_BLOCK = 512;
+
+function timestampSlug() {
+  const d = new Date();
+  const pad = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+}
+
+function sanitizeArchivePath(path) {
+  let p = (path || 'item').replace(/\\/g, '/').replace(/^[a-zA-Z]:\//, '');
+  p = p.split('/').map(part => part.trim()).filter(part => part && part !== '.' && part !== '..').join('/');
+  p = p.replace(/[<>:"|?*\x00-\x1f]/g, '_');
+  return p || 'item';
+}
+
+function uniqueArchivePath(path) {
+  const used = new Set(State.bundleItems.map(item => item.path));
+  if (!used.has(path)) return path;
+
+  const slash = path.lastIndexOf('/');
+  const dir = slash >= 0 ? path.slice(0, slash + 1) : '';
+  const base = slash >= 0 ? path.slice(slash + 1) : path;
+  const dot = base.lastIndexOf('.');
+  const stem = dot > 0 ? base.slice(0, dot) : base;
+  const ext = dot > 0 ? base.slice(dot) : '';
+  for (let i = 2; ; i++) {
+    const next = `${dir}${stem}-${i}${ext}`;
+    if (!used.has(next)) return next;
+  }
+}
+
+function addBundleFile(file, path) {
+  const safePath = uniqueArchivePath(sanitizeArchivePath(path || file.webkitRelativePath || file.name));
+  State.bundleItems.push({ path: safePath, file });
+  log(`Staged "${safePath}" (${fmtBytes(file.size)})`, 'ok');
+}
+
+function addBundleText(text) {
+  const name = `clipboard-${timestampSlug()}.txt`;
+  const file = new File([text], name, { type: 'text/plain;charset=utf-8', lastModified: Date.now() });
+  addBundleFile(file, name);
+}
+
+function renderBundleList() {
+  const panel = $('bundlePanel');
+  const list = $('bundleList');
+  const count = State.bundleItems.length;
+  panel.classList.toggle('visible', count > 0);
+  if (count > 0) {
+    renderPreparedPanel(null);
+  }
+  $('bundleSummary').textContent = count === 0
+    ? '暂存 0 项'
+    : `暂存 ${count} 项 · ${fmtBytes(State.bundleItems.reduce((sum, item) => sum + item.file.size, 0))}`;
+  list.innerHTML = '';
+  for (const item of State.bundleItems) {
+    const row = document.createElement('div');
+    row.className = 'item';
+    row.innerHTML = `
+      <span class="name">${escapeHtml(item.path)}</span>
+      <span class="size">${fmtBytes(item.file.size)}</span>
+    `;
+    list.appendChild(row);
+  }
+  updateUiState();
+}
+
+function renderPreparedPanel(info) {
+  const panel = $('preparedPanel');
+  if (!info) {
+    panel.classList.remove('visible');
+    $('preparedName').textContent = '—';
+    $('preparedSize').textContent = '—';
+    $('preparedHash').textContent = '—';
+    $('preparedMode').textContent = '—';
+    return;
+  }
+  panel.classList.add('visible');
+  $('preparedName').textContent = info.name;
+  $('preparedSize').textContent = info.size;
+  $('preparedHash').textContent = info.sha256;
+  $('preparedMode').textContent = info.mode;
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+async function stageFiles(files) {
+  if (_packingBundle) {
+    log('Ignored: bundle is being packed', 'err');
+    return;
+  }
+  for (const file of files) {
+    addBundleFile(file, file.webkitRelativePath || file.name);
+  }
+  renderBundleList();
+}
+
+function splitTarPath(path) {
+  const enc = new TextEncoder();
+  if (enc.encode(path).length <= 100) return { name: path, prefix: '' };
+
+  const hasTrailingSlash = path.endsWith('/');
+  const pathForSplit = hasTrailingSlash ? path.slice(0, -1) : path;
+  const slash = pathForSplit.lastIndexOf('/');
+  if (slash <= 0) throw new Error(`Archive path is too long: ${path}`);
+  const prefix = pathForSplit.slice(0, slash);
+  const name = pathForSplit.slice(slash + 1) + (hasTrailingSlash ? '/' : '');
+  if (enc.encode(name).length > 100 || enc.encode(prefix).length > 155) {
+    throw new Error(`Archive path is too long: ${path}`);
+  }
+  return { name, prefix };
+}
+
+function writeAscii(buf, offset, length, value) {
+  const bytes = new TextEncoder().encode(value);
+  if (bytes.length > length) throw new Error(`tar header field too long: ${value}`);
+  buf.set(bytes, offset);
+}
+
+function writeOctal(buf, offset, length, value) {
+  const text = Math.floor(value).toString(8);
+  if (text.length > length - 1) throw new Error(`tar header number too large: ${value}`);
+  writeAscii(buf, offset, length - 1, text.padStart(length - 1, '0'));
+  buf[offset + length - 1] = 0;
+}
+
+function tarHeader(path, size, mtime, typeflag) {
+  const header = new Uint8Array(TAR_BLOCK);
+  const parts = splitTarPath(path);
+  writeAscii(header, 0, 100, parts.name);
+  writeOctal(header, 100, 8, typeflag === '5' ? 0o755 : 0o644);
+  writeOctal(header, 108, 8, 0);
+  writeOctal(header, 116, 8, 0);
+  writeOctal(header, 124, 12, size);
+  writeOctal(header, 136, 12, Math.floor(mtime / 1000));
+  header.fill(0x20, 148, 156);
+  writeAscii(header, 156, 1, typeflag);
+  writeAscii(header, 257, 6, 'ustar\0');
+  writeAscii(header, 263, 2, '00');
+  writeAscii(header, 265, 32, 'cimbar');
+  writeAscii(header, 297, 32, 'cimbar');
+  if (parts.prefix) writeAscii(header, 345, 155, parts.prefix);
+
+  let sum = 0;
+  for (const b of header) sum += b;
+  const checksum = sum.toString(8).padStart(6, '0');
+  writeAscii(header, 148, 6, checksum);
+  header[154] = 0;
+  header[155] = 0x20;
+  return header;
+}
+
+function tarPadding(size) {
+  const pad = (TAR_BLOCK - (size % TAR_BLOCK)) % TAR_BLOCK;
+  return pad ? new Uint8Array(pad) : null;
+}
+
+function collectTarDirs(items) {
+  const dirs = new Set();
+  for (const item of items) {
+    const parts = item.path.split('/').slice(0, -1);
+    let cur = '';
+    for (const part of parts) {
+      cur = cur ? `${cur}/${part}` : part;
+      dirs.add(cur + '/');
+    }
+  }
+  return Array.from(dirs).sort();
+}
+
+async function createTarFile(items) {
+  const parts = [];
+  for (const dir of collectTarDirs(items)) {
+    parts.push(tarHeader(dir, 0, Date.now(), '5'));
+  }
+  for (const item of items) {
+    const bytes = new Uint8Array(await item.file.arrayBuffer());
+    parts.push(tarHeader(item.path, bytes.length, item.file.lastModified || Date.now(), '0'));
+    parts.push(bytes);
+    const pad = tarPadding(bytes.length);
+    if (pad) parts.push(pad);
+  }
+  parts.push(new Uint8Array(TAR_BLOCK * 2));
+  return new File(parts, `cimbar-bundle-${timestampSlug()}.tar`, {
+    type: 'application/x-tar',
+    lastModified: Date.now(),
+  });
+}
+
+async function sendBundle() {
+  if (State.active || _packingBundle || State.bundleItems.length === 0) return;
+  const items = State.bundleItems.slice();
+  _packingBundle = true;
+  updateUiState();
+  try {
+    const archive = await createTarFile(items);
+    log(`Created archive "${archive.name}" (${fmtBytes(archive.size)})`, 'ok');
+    await prepareFile(archive);
+    if (wasmReady && State.chunks.length > 0) {
+      startTransmission();
+    }
+  } catch (err) {
+    log(`Failed to create archive: ${(err && err.message) || err}`, 'err');
+  } finally {
+    _packingBundle = false;
+    updateUiState();
+  }
+}
+
 // ============= WASM 集成 =============
 let wasmReady = false;
 let _idealRatio = 1;
+let _packingBundle = false;
 
 // 每侧(横屏)/上下(竖屏)栏的最小留白, 保证跳转列表 + 进度信息可读.
 // 宽屏 (≥ ~1334w) 用 200 桌面观感不缩; 窄屏 (低分辨率横屏/平板分屏) 按 mw 的 15% 缩放, 下限 120 兜底.
@@ -570,6 +856,7 @@ async function prepareFile(file) {
     State.lockedRefillCount = 0;
     State.completedChunks = new Set();
     $('btnStart').disabled = true;
+    renderPreparedPanel(null);
 
     log(`Preparing ${file.name} (${fmtBytes(file.size)})`);
     State.file = file;
@@ -625,6 +912,13 @@ async function prepareFile(file) {
       log(`Sliced into ${chunkCount} chunks, manifest = ${State.manifestBytes.length} bytes`, 'ok');
     }
 
+    renderPreparedPanel({
+      name: file.name,
+      size: fmtBytes(file.size),
+      sha256: fullSha,
+      mode: State.simpleMode ? '单文件直发' : `${State.chunks.length + 1} 个接收文件，需拼接`,
+    });
+
     loadCompletedFromStorage();  // multi 模式从 localStorage 恢复; simple 模式直接 reset (key=null 不读)
     applyMode();   // 同步 UI 文案 + 计算 totalFramesNeeded + renderJumpButtons (此时 completed 状态已就绪)
     updateConfirmStats();
@@ -645,6 +939,7 @@ async function prepareFile(file) {
     $('m_filehash').textContent = '—';
     $('m_chunkcount').textContent = '—';
     $('m_encodeid').textContent = '—';
+    renderPreparedPanel(null);
   } finally {
     _preparing = false;
     updateUiState();
@@ -1019,6 +1314,11 @@ function scheduleNextFrame() {
 function updateUiState() {
   const ready = wasmReady && State.chunks.length > 0;
   $('btnStart').disabled = !ready || State.active;
+  $('btnStartPrepared').disabled = !ready || State.active;
+  $('btnAddFiles').disabled = State.active || _packingBundle;
+  $('btnAddFolder').disabled = State.active || _packingBundle;
+  $('btnSendBundle').disabled = State.bundleItems.length === 0 || State.active || _preparing || _packingBundle;
+  $('btnClearBundle').disabled = State.bundleItems.length === 0 || State.active || _packingBundle;
 }
 
 function updateProgressUI() {
@@ -1085,10 +1385,22 @@ function updateThroughputHint() {
 }
 
 // ============= 事件绑定 =============
-$('dropzone').addEventListener('click', () => $('fileInput').click());
+$('dropzone').addEventListener('click', (e) => {
+  if (e.target.closest('button') || e.target.closest('#bundlePanel') || e.target.closest('#preparedPanel')) return;
+  $('fileInput').click();
+});
 $('fileInput').addEventListener('change', async (e) => {
   const f = e.target.files[0];
   if (f) await prepareFile(f);
+  e.target.value = '';
+});
+$('bundleFileInput').addEventListener('change', async (e) => {
+  await stageFiles(Array.from(e.target.files || []));
+  e.target.value = '';
+});
+$('bundleDirInput').addEventListener('change', async (e) => {
+  await stageFiles(Array.from(e.target.files || []));
+  e.target.value = '';
 });
 $('dropzone').addEventListener('dragover', (e) => {
   e.preventDefault();
@@ -1100,11 +1412,41 @@ $('dropzone').addEventListener('dragleave', () => {
 $('dropzone').addEventListener('drop', async (e) => {
   e.preventDefault();
   $('dropzone').classList.remove('dragover');
-  const f = e.dataTransfer.files[0];
-  if (f) await prepareFile(f);
+  const files = Array.from(e.dataTransfer.files || []);
+  if (files.length > 1 || State.bundleItems.length > 0) {
+    await stageFiles(files);
+  } else if (files.length === 1) {
+    await prepareFile(files[0]);
+  }
+});
+
+$('btnAddFiles').addEventListener('click', (e) => {
+  e.stopPropagation();
+  if (_packingBundle) return;
+  $('bundleFileInput').click();
+});
+$('btnAddFolder').addEventListener('click', (e) => {
+  e.stopPropagation();
+  if (_packingBundle) return;
+  $('bundleDirInput').click();
+});
+$('btnSendBundle').addEventListener('click', async (e) => {
+  e.stopPropagation();
+  await sendBundle();
+});
+$('btnClearBundle').addEventListener('click', (e) => {
+  e.stopPropagation();
+  if (_packingBundle) return;
+  State.bundleItems = [];
+  renderBundleList();
+  log('Cleared staged bundle items', 'ok');
 });
 
 $('btnStart').addEventListener('click', startTransmission);
+$('btnStartPrepared').addEventListener('click', (e) => {
+  e.stopPropagation();
+  startTransmission();
+});
 $('btnStop').addEventListener('click', stopTransmission);
 $('btnDebug').addEventListener('click', () => $('log').classList.toggle('active'));
 $('btnConfirmChunk').addEventListener('click', markCurrentChunkCompleted);
@@ -1131,6 +1473,26 @@ window.addEventListener('drop', async (e) => {
   }
   await prepareFile(f);
   log(`Loaded "${f.name}" (${fmtBytes(f.size)}). Click 开始传输 to start.`, 'ok');
+});
+
+window.addEventListener('paste', async (e) => {
+  if (State.active || _packingBundle) return;
+  const target = e.target;
+  if (target && target.closest && target.closest('input, textarea, select, [contenteditable="true"]')) return;
+  const data = e.clipboardData;
+  if (!data) return;
+
+  const files = Array.from(data.files || []);
+  const text = data.getData('text/plain');
+  if (files.length === 0 && !text) return;
+
+  e.preventDefault();
+  if (files.length > 0) {
+    await stageFiles(files);
+  } else {
+    addBundleText(text);
+    renderBundleList();
+  }
 });
 
 log('Page loaded, waiting for wasm runtime...');
