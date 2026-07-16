@@ -49,6 +49,10 @@
       flex-direction: row; align-items: stretch;
     }
     #main.portrait { flex-direction: column; }
+    #main:not(.transfer-active) .side-panel,
+    #main:not(.transfer-active) #center {
+      display: none;
+    }
 
     #center {
       flex: 0 0 auto; display: flex; align-items: center; justify-content: center;
@@ -82,6 +86,12 @@
       background: rgba(15, 25, 50, 0.94);
       transition: border-color 0.2s, background 0.2s;
       cursor: pointer; z-index: 5;
+    }
+    #main:not(.transfer-active) #dropzone {
+      position: relative;
+      inset: auto;
+      flex: 1 1 auto;
+      min-height: 0;
     }
     #dropzone:hover, #dropzone.dragover { border-color: #5fbcff; background: rgba(30, 60, 110, 0.94); }
     #dropzone .icon { font-size: 48px; opacity: 0.5; }
@@ -968,6 +978,7 @@ function startTransmission() {
   State.interval = Math.floor(1000 / (parseInt($('fps').value, 10) || 15));
   State.redundancy = parseFloat($('redundancy').value) || 1.5;
   applyMode();   // 兜底重设 UI + 用最新 redundancy 重算 totalFramesNeeded; 同时 renderJumpButtons 用 active=true 渲染可点击按钮
+  $('main').classList.add('transfer-active');
   $('canvas').style.visibility = 'visible';
   $('dropzone').classList.add('hidden');
   $('progress').classList.add('active');
@@ -998,6 +1009,7 @@ function stopTransmission() {
   $('btnStop').disabled = true;
   $('chunkSize').disabled = false;
   // 显回 dropzone, 用户可以拖新文件; canvas 隐藏防止旧码图穿过 dropzone margin 露出来
+  $('main').classList.remove('transfer-active');
   $('canvas').style.visibility = 'hidden';
   $('dropzone').classList.remove('hidden');
   $('progress').classList.remove('active');
