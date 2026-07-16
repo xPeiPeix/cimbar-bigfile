@@ -26,11 +26,13 @@ The receiver uses sz3's **CameraFileCopy (CFC)** Android app to scan; CFC's buil
 
 > You can also use the modular `send.html` (development build), but it requires a local HTTP server (see [Development](#development) below) — browsers block wasm loads under the `file://` scheme. The standalone build is simpler for end users.
 
+The sender and reassembly pages **default to English**. Use the `中文` / `EN` button in the top-right corner to switch languages at any time; the browser remembers your choice across refreshes and future visits.
+
 ### Sending
 
 1. Open `send.standalone.html`
 2. Drop the file you want to transfer onto the page
-3. Click "Start" — the screen begins playing the colored-barcode animation
+3. Click "Start" ("开始传输" in Chinese) — the screen begins playing the colored-barcode animation
 4. **Keep the screen still until all chunks are sent**
 
 You can also collect ad-hoc content on the sender page before sending:
@@ -66,6 +68,14 @@ Button visual states (left column in screenshot):
 
 > simpleMode (small files ≤ chunk size, single-stream direct send) hides the jump list — there is only 1 stream, so jumping is meaningless.
 
+#### 🔍 Full-screen scanning
+
+After transmission starts, click "Fullscreen code" ("全屏显示码图" in Chinese) to enlarge the cimbar code to fill the screen, making it easier for the phone camera to focus and scan. Full-screen mode shows only the complete, aspect-ratio-preserving code image and an auto-fading floating exit control; the side panels are hidden.
+
+- Press `Esc` or click the floating exit control to return to the normal layout
+- Move the pointer or focus the control with the keyboard to reveal it again
+- Stopping the transmission automatically exits full-screen mode
+
 ### Receiving
 
 1. Open CFC on the phone, point it at the desktop screen
@@ -81,6 +91,8 @@ Button visual states (left column in screenshot):
 2. Open `reassemble.html` in a browser
 3. Select all files and drop them onto the page
 4. SHA256 verification runs automatically → on success → the reconstructed original file is downloaded
+
+The reassembly page also defaults to English and provides the same `中文` / `EN` language control. Switching languages does not clear selected files or reset the current verification state.
 
 ## Known limitations
 

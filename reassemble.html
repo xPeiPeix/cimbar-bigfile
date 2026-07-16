@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>cimbar-bigfile · 拼接端</title>
+  <title>cimbar-bigfile · Reassembler</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; }
@@ -15,8 +15,22 @@
       overflow-y: auto;
     }
     .container { max-width: 900px; margin: 0 auto; }
+    .topbar {
+      display: flex; align-items: flex-start; justify-content: space-between;
+      gap: 16px; margin-bottom: 24px;
+    }
+    .title-wrap { min-width: 0; }
     h1 { font-size: 20px; font-weight: 500; margin-bottom: 4px; color: #5fbcff; }
     .sub { color: #888; font-size: 13px; margin-bottom: 24px; }
+    .topbar .sub { margin-bottom: 0; }
+    .locale-button {
+      flex: 0 0 auto; min-width: 54px; padding: 7px 12px;
+      background: rgba(255,255,255,0.08); color: #ddd;
+      border: 1px solid #555; border-radius: 4px;
+      cursor: pointer; font-size: 13px; font-weight: 500;
+    }
+    .locale-button:hover { background: rgba(255,255,255,0.14); border-color: #777; }
+    .locale-button:focus-visible { outline: 2px solid #5fbcff; outline-offset: 2px; }
 
     #dropzone {
       border: 3px dashed #555;
@@ -115,22 +129,27 @@
 <body>
 
 <div class="container">
-  <h1>📥 cimbar-bigfile · 拼接端</h1>
-  <div class="sub">把 CFC 接收到的所有文件拖入下方，自动识别 manifest 并拼接还原原文件</div>
+  <div class="topbar">
+    <div class="title-wrap">
+      <h1 id="pageHeading">📥 cimbar-bigfile · Reassembler</h1>
+      <div class="sub" id="pageSubtitle">Drop all files received by CFC below. The manifest is detected automatically and the original file is reassembled.</div>
+    </div>
+    <button id="btnLocale" class="locale-button" type="button" title="Switch to Chinese" aria-label="Switch to Chinese">中文</button>
+  </div>
 
-  <div id="dropzone">
+  <div id="dropzone" role="button" tabindex="0" title="Select received files" aria-label="Select received files">
     <div class="icon">📁</div>
-    <div class="hint">拖入所有接收到的文件（manifest.json + *.partXX.bin）</div>
-    <div class="sub2">支持选择多个文件 · 自动识别顺序 · 全程在浏览器本地处理</div>
-    <input type="file" id="fileInput" multiple style="display:none;">
+    <div class="hint" id="dropHint">Drop all received files here (manifest.json + *.partXX.bin)</div>
+    <div class="sub2" id="dropSub">Select multiple files · Automatic ordering · Everything stays in your browser</div>
+    <input type="file" id="fileInput" multiple style="display:none;" aria-label="Select received files">
   </div>
 
   <div id="filelist" class="filelist" style="display:none;"></div>
   <div id="info" class="info" style="display:none;"></div>
 
   <div class="actions">
-    <button id="btnReassemble" disabled>开始拼接 + 校验 + 下载</button>
-    <button id="btnClear" class="secondary" disabled>清空</button>
+    <button id="btnReassemble" type="button" title="Reassemble, verify, and download the original file" disabled>Reassemble + Verify + Download</button>
+    <button id="btnClear" class="secondary" type="button" title="Clear selected files and logs" disabled>Clear</button>
   </div>
 
   <div class="progress-bar" style="display:none;" id="pbarBox">
@@ -143,21 +162,154 @@
 <script>
 'use strict';
 
+const LOCALE_KEY = 'cimbar-bigfile:locale';
+const SUPPORTED_LOCALES = new Set(['en', 'zh-CN']);
+const TRANSLATIONS = {
+  en: {
+    pageTitle: 'cimbar-bigfile · Reassembler',
+    pageHeading: '📥 cimbar-bigfile · Reassembler',
+    pageSubtitle: 'Drop all files received by CFC below. The manifest is detected automatically and the original file is reassembled.',
+    dropHint: 'Drop all received files here (manifest.json + *.partXX.bin)',
+    dropSub: 'Select multiple files · Automatic ordering · Everything stays in your browser',
+    selectFiles: 'Select received files',
+    reassembleButton: 'Reassemble + Verify + Download',
+    reassembleTitle: 'Reassemble, verify, and download the original file',
+    clearButton: 'Clear',
+    clearTitle: 'Clear selected files and logs',
+    localeButton: '中文',
+    localeTitle: 'Switch to Chinese',
+    badgeManifest: 'MANIFEST',
+    badgePart: 'PART {index}',
+    badgeUnknown: 'UNKNOWN',
+    manifestInfoTitle: '📋 Manifest details',
+    originalFilename: 'Original filename:',
+    originalSize: 'Original size:',
+    originalSha256: 'Original SHA256:',
+    chunkSize: 'Chunk size:',
+    chunkCount: 'Chunk count:',
+    encodeIdBase: 'Encode ID base:',
+    receivedChunks: 'Received chunks:',
+    missingChunks: 'Missing chunks:',
+    unknownFiles: 'Unrecognized files:',
+    manifestRecovered: 'Manifest recovered by content from "{filename}"',
+    manifestOk: 'Manifest OK: {filename}, {size}, chunks: {count}',
+    manifestToolUnexpected: 'Manifest.tool="{tool}", expected "cimbar-bigfile". Continuing anyway.',
+    manifestVersionUnsupported: 'Unsupported manifest version: {version}. This tool understands version 1.',
+    manifestMalformed: 'Malformed manifest: chunks array length {length} != chunk_count {count}',
+    manifestParseFailed: 'Failed to parse manifest: {error}',
+    partsRecovered: 'Recovered {count} part file(s) by size + SHA256',
+    cannotReassemble: 'Cannot reassemble: missing chunks or manifest',
+    reassemblyStart: 'Starting reassembly: {filename} ({size})',
+    missingChunk: 'Missing chunk {index}',
+    chunkSizeMismatch: 'Chunk {index} size mismatch: file={actual}, expected={expected}',
+    chunkShaMismatch: 'Chunk {index} SHA256 mismatch! expected={expected}, got={actual}',
+    fileCorrupted: 'File "{filename}" may be corrupted. Re-receive this chunk.',
+    chunkOk: 'Chunk {index} OK ({size}, {sha}…)',
+    concatenating: 'Concatenating chunks...',
+    totalSizeMismatch: 'Total size mismatch: concatenated={actual}, manifest={expected}',
+    verifyingFullSha: 'Verifying full-file SHA256...',
+    fullShaMismatch: 'FULL FILE SHA256 MISMATCH! expected={expected}, got={actual}',
+    fullShaImpossible: 'This should never happen if all chunk SHA256s passed. Possible manifest corruption.',
+    fullShaVerified: 'Full-file SHA256 verified: {sha}',
+    downloadDone: '✅ Done! Downloaded as "{filename}"',
+    cleared: 'Cleared',
+    ready: 'Ready. Drag in manifest.json + all *.partXX.bin files.',
+  },
+  'zh-CN': {
+    pageTitle: 'cimbar-bigfile · 拼接端',
+    pageHeading: '📥 cimbar-bigfile · 拼接端',
+    pageSubtitle: '把 CFC 接收到的所有文件拖入下方，自动识别 manifest 并拼接还原原文件。',
+    dropHint: '拖入所有接收到的文件（manifest.json + *.partXX.bin）',
+    dropSub: '支持选择多个文件 · 自动识别顺序 · 全程在浏览器本地处理',
+    selectFiles: '选择接收到的文件',
+    reassembleButton: '开始拼接 + 校验 + 下载',
+    reassembleTitle: '拼接并校验原文件，然后下载',
+    clearButton: '清空',
+    clearTitle: '清空已选文件和日志',
+    localeButton: 'EN',
+    localeTitle: '切换为英文',
+    badgeManifest: '清单',
+    badgePart: '分块 {index}',
+    badgeUnknown: '未知',
+    manifestInfoTitle: '📋 manifest 解析结果',
+    originalFilename: '原文件名：',
+    originalSize: '原大小：',
+    originalSha256: '原 SHA256：',
+    chunkSize: '块大小：',
+    chunkCount: '块总数：',
+    encodeIdBase: '编码 ID 起始值：',
+    receivedChunks: '已收到的块：',
+    missingChunks: '缺失的块：',
+    unknownFiles: '未识别文件：',
+    manifestRecovered: '已根据文件内容从“{filename}”恢复 manifest',
+    manifestOk: 'Manifest 正常：{filename}，{size}，共 {count} 块',
+    manifestToolUnexpected: 'Manifest.tool="{tool}"，预期为“cimbar-bigfile”；仍将继续处理。',
+    manifestVersionUnsupported: '不支持 manifest 版本 {version}；此工具仅支持版本 1。',
+    manifestMalformed: 'Manifest 格式错误：chunks 数组长度 {length} != chunk_count {count}',
+    manifestParseFailed: '解析 manifest 失败：{error}',
+    partsRecovered: '已根据大小和 SHA256 恢复 {count} 个分块文件',
+    cannotReassemble: '无法拼接：缺少分块或 manifest',
+    reassemblyStart: '开始拼接：{filename}（{size}）',
+    missingChunk: '缺少分块 {index}',
+    chunkSizeMismatch: '分块 {index} 大小不匹配：文件={actual}，预期={expected}',
+    chunkShaMismatch: '分块 {index} 的 SHA256 不匹配！预期={expected}，实际={actual}',
+    fileCorrupted: '文件“{filename}”可能已损坏，请重新接收该分块。',
+    chunkOk: '分块 {index} 校验通过（{size}，{sha}…）',
+    concatenating: '正在拼接分块……',
+    totalSizeMismatch: '总大小不匹配：拼接后={actual}，manifest={expected}',
+    verifyingFullSha: '正在校验完整文件 SHA256……',
+    fullShaMismatch: '完整文件 SHA256 不匹配！预期={expected}，实际={actual}',
+    fullShaImpossible: '所有分块 SHA256 均通过时不应出现此问题，manifest 可能已损坏。',
+    fullShaVerified: '完整文件 SHA256 校验通过：{sha}',
+    downloadDone: '✅ 完成！已下载为“{filename}”',
+    cleared: '已清空',
+    ready: '准备就绪。请拖入 manifest.json 和所有 *.partXX.bin 文件。',
+  },
+};
+
 function $(id) { return document.getElementById(id); }
+function loadLocale() {
+  try {
+    const saved = localStorage.getItem(LOCALE_KEY);
+    if (SUPPORTED_LOCALES.has(saved)) return saved;
+  } catch (e) {
+    console.warn('[reassemble] Unable to read locale preference:', e);
+  }
+  return 'en';
+}
+let locale = loadLocale();
+function t(key, params = {}) {
+  const template = TRANSLATIONS[locale][key] ?? TRANSLATIONS.en[key] ?? key;
+  return template.replace(/\{(\w+)\}/g, (match, name) => (
+    Object.prototype.hasOwnProperty.call(params, name) ? String(params[name]) : match
+  ));
+}
 function fmtBytes(n) {
   if (n < 1024) return n + ' B';
   if (n < 1048576) return (n / 1024).toFixed(1) + ' KB';
   if (n < 1073741824) return (n / 1048576).toFixed(2) + ' MB';
   return (n / 1073741824).toFixed(2) + ' GB';
 }
-function log(msg, cls) {
+function appendLogEntry(entry) {
   const el = $('log');
   const div = document.createElement('div');
-  if (cls) div.className = cls;
-  div.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+  if (entry.cls) div.className = entry.cls;
+  const time = new Date(entry.timestamp).toLocaleTimeString(locale);
+  div.textContent = `[${time}] ${t(entry.key, entry.params)}`;
   el.appendChild(div);
+}
+function renderLogs() {
+  const el = $('log');
+  el.innerHTML = '';
+  for (const entry of State.logs) appendLogEntry(entry);
   el.scrollTop = el.scrollHeight;
-  console.log('[reassemble] ' + msg);
+}
+function log(key, params = {}, cls) {
+  const entry = { key, params, cls, timestamp: Date.now() };
+  State.logs.push(entry);
+  appendLogEntry(entry);
+  $('log').scrollTop = $('log').scrollHeight;
+  console.log('[reassemble] ' + t(key, params));
 }
 async function sha256Hex(uint8) {
   const buf = await crypto.subtle.digest('SHA-256', uint8);
@@ -172,7 +324,43 @@ const State = {
   manifest: null,
   partFiles: new Map(), // index -> File (按 chunks[].index 索引)
   unknownFiles: [],
+  logs: [],
 };
+
+function applyLocale() {
+  document.documentElement.lang = locale;
+  document.title = t('pageTitle');
+  $('pageHeading').textContent = t('pageHeading');
+  $('pageSubtitle').textContent = t('pageSubtitle');
+  $('dropHint').textContent = t('dropHint');
+  $('dropSub').textContent = t('dropSub');
+  $('dropzone').title = t('selectFiles');
+  $('dropzone').setAttribute('aria-label', t('selectFiles'));
+  $('fileInput').setAttribute('aria-label', t('selectFiles'));
+  $('btnReassemble').textContent = t('reassembleButton');
+  $('btnReassemble').title = t('reassembleTitle');
+  $('btnReassemble').setAttribute('aria-label', t('reassembleTitle'));
+  $('btnClear').textContent = t('clearButton');
+  $('btnClear').title = t('clearTitle');
+  $('btnClear').setAttribute('aria-label', t('clearTitle'));
+  $('btnLocale').textContent = t('localeButton');
+  $('btnLocale').title = t('localeTitle');
+  $('btnLocale').setAttribute('aria-label', t('localeTitle'));
+  renderFileList();
+  renderInfo();
+  renderLogs();
+}
+
+function setLocale(nextLocale) {
+  if (!SUPPORTED_LOCALES.has(nextLocale) || nextLocale === locale) return;
+  locale = nextLocale;
+  try {
+    localStorage.setItem(LOCALE_KEY, locale);
+  } catch (e) {
+    console.warn('[reassemble] Unable to save locale preference:', e);
+  }
+  applyLocale();
+}
 
 // ============= 文件分类 =============
 async function ingest(files) {
@@ -218,8 +406,12 @@ async function tryParseManifest() {
         State.manifestFile = f;
         State.manifest = m;
         State.unknownFiles = State.unknownFiles.filter(x => x !== f);
-        log(`Manifest recovered by content from "${f.name}"`, 'warn');
-        log(`Manifest OK: ${m.filename}, ${fmtBytes(m.total_size)}, ${m.chunk_count} chunks`, 'ok');
+        log('manifestRecovered', { filename: f.name }, 'warn');
+        log('manifestOk', {
+          filename: m.filename,
+          size: fmtBytes(m.total_size),
+          count: m.chunk_count,
+        }, 'ok');
         return;
       }
     }
@@ -229,7 +421,11 @@ async function tryParseManifest() {
   const m = await parseManifestCandidate(State.manifestFile);
   if (m) {
     State.manifest = m;
-    log(`Manifest OK: ${m.filename}, ${fmtBytes(m.total_size)}, ${m.chunk_count} chunks`, 'ok');
+    log('manifestOk', {
+      filename: m.filename,
+      size: fmtBytes(m.total_size),
+      count: m.chunk_count,
+    }, 'ok');
   } else {
     State.manifest = null;
   }
@@ -241,20 +437,20 @@ async function parseManifestCandidate(file) {
     const txt = await file.text();
     const m = JSON.parse(txt);
     if (m.tool !== 'cimbar-bigfile') {
-      log(`Manifest.tool="${m.tool}", expected "cimbar-bigfile". Continuing anyway.`, 'warn');
+      log('manifestToolUnexpected', { tool: m.tool }, 'warn');
     }
     if (m.version !== 1) {
-      log(`Unsupported manifest version: ${m.version}. This tool understands version 1.`, 'err');
+      log('manifestVersionUnsupported', { version: m.version }, 'err');
       return null;
     }
     if (!Array.isArray(m.chunks) || m.chunks.length !== m.chunk_count) {
-      log(`Malformed manifest: chunks array length ${m.chunks?.length} != chunk_count ${m.chunk_count}`, 'err');
+      log('manifestMalformed', { length: m.chunks?.length, count: m.chunk_count }, 'err');
       return null;
     }
     return m;
   } catch (e) {
     if (/^manifest\.json$/i.test(file.name)) {
-      log(`Failed to parse manifest: ${e.message}`, 'err');
+      log('manifestParseFailed', { error: e.message }, 'err');
     }
     return null;
   }
@@ -298,7 +494,7 @@ async function recoverPartFilesFromManifest() {
     return !Array.from(State.partFiles.values()).includes(f);
   });
   if (recovered > 0) {
-    log(`Recovered ${recovered} part file(s) by size + SHA256`, 'warn');
+    log('partsRecovered', { count: recovered }, 'warn');
   }
 }
 
@@ -323,12 +519,12 @@ function renderFileList() {
     row.className = 'row';
     let badge, badgeClass;
     if (f === State.manifestFile) {
-      badge = 'MANIFEST'; badgeClass = 'manifest';
+      badge = t('badgeManifest'); badgeClass = 'manifest';
     } else if (Array.from(State.partFiles.values()).includes(f)) {
       const idx = Array.from(State.partFiles.entries()).find(([k, v]) => v === f)[0];
-      badge = `PART ${idx}`; badgeClass = 'chunk';
+      badge = t('badgePart', { index: idx }); badgeClass = 'chunk';
     } else {
-      badge = 'UNKNOWN'; badgeClass = 'unknown';
+      badge = t('badgeUnknown'); badgeClass = 'unknown';
     }
     row.innerHTML = `
       <span class="badge ${badgeClass}">${badge}</span>
@@ -357,17 +553,17 @@ function renderInfo() {
   }
   const ok = missing.length === 0;
   el.innerHTML = `
-    <h2>📋 manifest 解析结果</h2>
+    <h2>${t('manifestInfoTitle')}</h2>
     <div class="info-grid">
-      <span class="k">原文件名:</span> <span class="v">${escapeHtml(m.filename)}</span>
-      <span class="k">原大小:</span> <span class="v">${fmtBytes(m.total_size)}</span>
-      <span class="k">原 SHA256:</span> <span class="v">${m.sha256}</span>
-      <span class="k">块大小:</span> <span class="v">${fmtBytes(m.chunk_size)}</span>
-      <span class="k">块总数:</span> <span class="v">${m.chunk_count}</span>
-      <span class="k">encode_id_base:</span> <span class="v">${m.encode_id_base}</span>
-      <span class="k">已收到的块:</span> <span class="v ${ok ? 'ok' : 'err'}">${m.chunk_count - missing.length}/${m.chunk_count}</span>
-      ${missing.length > 0 ? `<span class="k">缺失的块:</span> <span class="v err">${missing.join(', ')}</span>` : ''}
-      <span class="k">未识别文件:</span> <span class="v ${State.unknownFiles.length === 0 ? 'ok' : 'warn'}">${State.unknownFiles.length}</span>
+      <span class="k">${t('originalFilename')}</span> <span class="v">${escapeHtml(m.filename)}</span>
+      <span class="k">${t('originalSize')}</span> <span class="v">${fmtBytes(m.total_size)}</span>
+      <span class="k">${t('originalSha256')}</span> <span class="v">${escapeHtml(String(m.sha256))}</span>
+      <span class="k">${t('chunkSize')}</span> <span class="v">${fmtBytes(m.chunk_size)}</span>
+      <span class="k">${t('chunkCount')}</span> <span class="v">${m.chunk_count}</span>
+      <span class="k">${t('encodeIdBase')}</span> <span class="v">${escapeHtml(String(m.encode_id_base))}</span>
+      <span class="k">${t('receivedChunks')}</span> <span class="v ${ok ? 'ok' : 'err'}">${m.chunk_count - missing.length}/${m.chunk_count}</span>
+      ${missing.length > 0 ? `<span class="k">${t('missingChunks')}</span> <span class="v err">${missing.join(', ')}</span>` : ''}
+      <span class="k">${t('unknownFiles')}</span> <span class="v ${State.unknownFiles.length === 0 ? 'ok' : 'warn'}">${State.unknownFiles.length}</span>
     </div>
   `;
 }
@@ -375,7 +571,7 @@ function renderInfo() {
 // ============= 拼接 + 校验 =============
 async function reassemble() {
   if (!canReassemble()) {
-    log('Cannot reassemble: missing chunks or manifest', 'err');
+    log('cannotReassemble', {}, 'err');
     return;
   }
   $('btnReassemble').disabled = true;
@@ -385,7 +581,7 @@ async function reassemble() {
 
   const m = State.manifest;
   const total = m.total_size;
-  log(`Starting reassembly: ${m.filename} (${fmtBytes(total)})`, 'ok');
+  log('reassemblyStart', { filename: m.filename, size: fmtBytes(total) }, 'ok');
 
   // 1. 校验每块 SHA256 + 收集字节
   const buffers = [];
@@ -393,24 +589,24 @@ async function reassemble() {
     const expected = m.chunks[i];
     const file = State.partFiles.get(i);
     if (!file) {
-      log(`Missing chunk ${i}`, 'err');
+      log('missingChunk', { index: i }, 'err');
       $('btnReassemble').disabled = false;
       return;
     }
     const bytes = new Uint8Array(await file.arrayBuffer());
     if (bytes.length !== expected.size) {
-      log(`Chunk ${i} size mismatch: file=${bytes.length}, expected=${expected.size}`, 'err');
+      log('chunkSizeMismatch', { index: i, actual: bytes.length, expected: expected.size }, 'err');
       $('btnReassemble').disabled = false;
       return;
     }
     const sha = await sha256Hex(bytes);
     if (sha !== expected.sha256) {
-      log(`Chunk ${i} SHA256 mismatch! expected=${expected.sha256}, got=${sha}`, 'err');
-      log(`File "${file.name}" may be corrupted. Re-receive this chunk.`, 'err');
+      log('chunkShaMismatch', { index: i, expected: expected.sha256, actual: sha }, 'err');
+      log('fileCorrupted', { filename: file.name }, 'err');
       $('btnReassemble').disabled = false;
       return;
     }
-    log(`Chunk ${i} OK (${fmtBytes(bytes.length)}, ${sha.substring(0, 12)}…)`, 'ok');
+    log('chunkOk', { index: i, size: fmtBytes(bytes.length), sha: sha.substring(0, 12) }, 'ok');
     buffers.push(bytes);
 
     const pct = ((i + 1) / m.chunk_count) * 50; // 0-50%
@@ -418,7 +614,7 @@ async function reassemble() {
   }
 
   // 2. 拼接
-  log('Concatenating chunks...', 'ok');
+  log('concatenating', {}, 'ok');
   const out = new Uint8Array(total);
   let offset = 0;
   for (const buf of buffers) {
@@ -426,23 +622,23 @@ async function reassemble() {
     offset += buf.length;
   }
   if (offset !== total) {
-    log(`Total size mismatch: concatenated=${offset}, manifest=${total}`, 'err');
+    log('totalSizeMismatch', { actual: offset, expected: total }, 'err');
     $('btnReassemble').disabled = false;
     return;
   }
   $('pbar').style.width = '75%';
 
   // 3. 全文 SHA256 校验
-  log('Verifying full-file SHA256...', 'ok');
+  log('verifyingFullSha', {}, 'ok');
   const finalSha = await sha256Hex(out);
   if (finalSha !== m.sha256) {
-    log(`FULL FILE SHA256 MISMATCH! expected=${m.sha256}, got=${finalSha}`, 'err');
-    log('This should never happen if all chunk SHA256s passed. Possible manifest corruption.', 'err');
+    log('fullShaMismatch', { expected: m.sha256, actual: finalSha }, 'err');
+    log('fullShaImpossible', {}, 'err');
     $('btnReassemble').disabled = false;
     return;
   }
   $('pbar').style.width = '100%';
-  log(`Full-file SHA256 verified: ${finalSha}`, 'ok');
+  log('fullShaVerified', { sha: finalSha }, 'ok');
 
   // 4. 触发下载
   const blob = new Blob([out], { type: 'application/octet-stream' });
@@ -455,13 +651,19 @@ async function reassemble() {
   document.body.removeChild(a);
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 
-  log(`✅ Done! Downloaded as "${m.filename}"`, 'ok');
+  log('downloadDone', { filename: m.filename }, 'ok');
   $('btnReassemble').disabled = false;
   $('btnClear').disabled = false;
 }
 
 // ============= 事件绑定 =============
 $('dropzone').addEventListener('click', () => $('fileInput').click());
+$('dropzone').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' || e.key === ' ') {
+    e.preventDefault();
+    $('fileInput').click();
+  }
+});
 $('fileInput').addEventListener('change', async (e) => {
   if (e.target.files && e.target.files.length > 0) {
     await ingest(Array.from(e.target.files));
@@ -483,6 +685,9 @@ $('dropzone').addEventListener('drop', async (e) => {
   }
 });
 
+$('btnLocale').addEventListener('click', () => {
+  setLocale(locale === 'en' ? 'zh-CN' : 'en');
+});
 $('btnReassemble').addEventListener('click', reassemble);
 $('btnClear').addEventListener('click', () => {
   State.files = [];
@@ -496,15 +701,17 @@ $('btnClear').addEventListener('click', () => {
   $('pbar').style.width = '0%';
   $('btnReassemble').disabled = true;
   $('btnClear').disabled = true;
-  $('log').innerHTML = '';
-  log('Cleared');
+  State.logs = [];
+  renderLogs();
+  log('cleared');
 });
 
 // 防止整页拖拽默认行为
 window.addEventListener('dragover', (e) => e.preventDefault());
 window.addEventListener('drop', (e) => e.preventDefault());
 
-log('Ready. Drag in manifest.json + all *.partXX.bin files.');
+applyLocale();
+log('ready');
 </script>
 
 </body>
