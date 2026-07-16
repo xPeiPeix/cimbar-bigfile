@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
-  <title>cimbar-bigfile · 发送端</title>
+  <title>cimbar-bigfile · Sender</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; }
@@ -40,6 +40,8 @@
     #ctrl button:disabled { background: #555; cursor: not-allowed; opacity: 0.6; }
     #ctrl button.stop { background: #e74c3c; }
     #ctrl button.stop:hover:not(:disabled) { background: #f15a4a; }
+    #ctrl button.utility { background: #354963; border: 1px solid #526b8b; padding-inline: 12px; }
+    #ctrl button.utility:hover:not(:disabled) { background: #456184; }
 
     /* main: 三栏(横屏)/上下(竖屏) 响应式容器.
        canvas 在中间按固有比例(_idealRatio)最大化, 两侧 panel flex:1 自动平分剩余空间.
@@ -58,6 +60,25 @@
       flex: 0 0 auto; display: flex; align-items: center; justify-content: center;
       overflow: hidden; position: relative;
     }
+    #center.fullscreen-active {
+      width: 100vw; height: 100vh; background: #000;
+    }
+    #btnExitFullscreen {
+      display: none; position: absolute; top: max(18px, env(safe-area-inset-top));
+      right: max(18px, env(safe-area-inset-right)); z-index: 20;
+      padding: 9px 14px; border: 1px solid rgba(255,255,255,0.5); border-radius: 6px;
+      background: rgba(0,0,0,0.7); color: #fff; cursor: pointer;
+      font-family: inherit; font-size: 13px; font-weight: 500; line-height: 1.2;
+      opacity: 1; transition: opacity 0.25s ease, background 0.2s ease;
+    }
+    #center.fullscreen-active #btnExitFullscreen { display: block; }
+    #center.fullscreen-active.fullscreen-controls-hidden #btnExitFullscreen {
+      opacity: 0; pointer-events: none;
+    }
+    #center.fullscreen-active.fullscreen-controls-hidden:focus-within #btnExitFullscreen {
+      opacity: 1; pointer-events: auto;
+    }
+    #btnExitFullscreen:hover, #btnExitFullscreen:focus-visible { background: rgba(35,35,35,0.94); }
 
     /* 左右栏(横屏)/上下栏(竖屏): 放文件信息/跳转列表/确认/进度. 内容超出时各自滚动. */
     .side-panel {
@@ -314,14 +335,14 @@
 <div id="header">
   <h1>📡 cimbar-bigfile</h1>
   <div id="ctrl">
-    <label>预设</label>
-    <select id="preset" title="按场景一键切换 FPS+冗余 (选自定义后可手动微调)">
-      <option value="balanced" selected>默认 (推荐)</option>
-      <option value="aggressive">激进 (固定支架+好光线)</option>
-      <option value="conservative">保守 (手持/差光线)</option>
-      <option value="custom">自定义</option>
+    <label data-i18n="presetLabel">Preset</label>
+    <select id="preset" data-i18n-title="presetTitle" title="Switch FPS and redundancy for the scanning conditions">
+      <option value="balanced" data-i18n="presetBalanced" selected>Balanced (recommended)</option>
+      <option value="aggressive" data-i18n="presetAggressive">Aggressive (tripod + good light)</option>
+      <option value="conservative" data-i18n="presetConservative">Conservative (handheld / poor light)</option>
+      <option value="custom" data-i18n="presetCustom">Custom</option>
     </select>
-    <label>块大小</label>
+    <label data-i18n="chunkSizeLabel">Chunk size</label>
     <select id="chunkSize" disabled>
       <option value="10485760" selected>10 MB</option>
       <option value="8388608">8 MB</option>
@@ -330,40 +351,42 @@
     </select>
     <label>FPS</label>
     <input type="number" id="fps" min="5" max="20" value="15" style="width: 50px;">
-    <label>冗余</label>
-    <input type="number" id="redundancy" min="1.0" max="5.0" step="0.1" value="2.0" style="width: 60px;" title="fountain code 冗余倍数. libcimbar 作者 confirms no penalty for higher values (sz3/libcimbar#165): 多余冗余只增加发送端发帧总数, 不影响 CFC 接收完成时间. 推荐: 1.5x 安全 / 2x 默认 / 3-4x 极端环境">
-    <span id="throughputHint" title="物理上限 = FPS × 7500 B; 区间下限 = 上限 / 冗余 (跑满冗余时的有效吞吐). 实测受光线/对焦影响" style="color: #5fbcff; font-size: 12px; white-space: nowrap;">预期 ~73–110 KB/s</span>
-    <button id="btnStart" disabled>开始传输</button>
-    <button id="btnStop" class="stop" disabled>停止</button>
-    <button id="btnDebug" title="切换日志显示">🐛</button>
+    <label data-i18n="redundancyLabel">Redundancy</label>
+    <input type="number" id="redundancy" min="1.0" max="5.0" step="0.1" value="2.0" style="width: 60px;" data-i18n-title="redundancyTitle" title="Fountain-code redundancy multiplier">
+    <span id="throughputHint" data-i18n-title="throughputTitle" title="Physical maximum = FPS × 7500 B; lower bound = maximum / redundancy" style="color: #5fbcff; font-size: 12px; white-space: nowrap;">Expected ~73–110 KB/s</span>
+    <button id="btnStart" data-i18n="start" disabled>Start transmission</button>
+    <button id="btnFullscreen" class="utility" data-i18n="fullscreen" data-i18n-title="fullscreenUnavailable" disabled>Fullscreen code</button>
+    <button id="btnStop" class="stop" data-i18n="stop" disabled>Stop</button>
+    <button id="btnDebug" data-i18n-title="debugTitle" data-i18n-aria-label="debugTitle" title="Toggle logs" aria-label="Toggle logs">🐛</button>
+    <button id="btnLanguage" class="utility" type="button" data-i18n="targetLanguage" title="Switch language" aria-label="Switch language">Language</button>
   </div>
 </div>
 
 <div id="main">
   <div id="dropzone">
     <div class="icon">📁</div>
-    <div class="hint">拖入单文件 / 点击选择 / Ctrl+V 暂存</div>
-    <div class="sub">文本会自动保存为 txt；多个文件或文件夹可先暂存，再打包发送</div>
+    <div class="hint" data-i18n="dropHint">Drop one file / click to choose / Ctrl+V to stage</div>
+    <div class="sub" data-i18n="dropSub">Pasted text is saved as .txt; stage multiple files or folders to send them as one archive</div>
     <div class="actions">
-      <button id="btnAddFiles" type="button">添加文件</button>
-      <button id="btnAddFolder" type="button">添加文件夹</button>
-      <button id="btnSendBundle" type="button" class="primary" disabled>打包并开始传输</button>
-      <button id="btnClearBundle" type="button" disabled>清空暂存</button>
+      <button id="btnAddFiles" type="button" data-i18n="addFiles">Add files</button>
+      <button id="btnAddFolder" type="button" data-i18n="addFolder">Add folder</button>
+      <button id="btnSendBundle" type="button" class="primary" data-i18n="sendBundle" disabled>Pack and start</button>
+      <button id="btnClearBundle" type="button" data-i18n="clearBundle" disabled>Clear staged items</button>
     </div>
     <div id="bundlePanel">
-      <div id="bundleSummary">暂存 0 项</div>
+      <div id="bundleSummary">0 staged items</div>
       <div id="bundleList"></div>
     </div>
     <div id="preparedPanel">
-      <div id="preparedTitle">已准备发送</div>
+      <div id="preparedTitle" data-i18n="preparedTitle">Ready to send</div>
       <div id="preparedMeta">
-        <span class="k">文件</span><span class="v" id="preparedName">—</span>
-        <span class="k">大小</span><span class="v" id="preparedSize">—</span>
+        <span class="k" data-i18n="fileLabel">File</span><span class="v" id="preparedName">—</span>
+        <span class="k" data-i18n="sizeLabel">Size</span><span class="v" id="preparedSize">—</span>
         <span class="k">SHA256</span><span class="v hash" id="preparedHash">—</span>
-        <span class="k">发送</span><span class="v" id="preparedMode">—</span>
+        <span class="k" data-i18n="modeLabel">Mode</span><span class="v" id="preparedMode">—</span>
       </div>
       <div id="preparedActions">
-        <button id="btnStartPrepared" type="button" disabled>开始传输</button>
+        <button id="btnStartPrepared" type="button" data-i18n="start" disabled>Start transmission</button>
       </div>
     </div>
     <input type="file" id="fileInput" style="display:none;">
@@ -373,38 +396,39 @@
 
   <div id="left-panel" class="side-panel">
     <div class="file-meta">
-      <div class="mrow"><span>文件</span><b id="m_filename">—</b></div>
-      <div class="mrow"><span>大小</span><b id="m_filesize">—</b></div>
+      <div class="mrow"><span data-i18n="fileLabel">File</span><b id="m_filename">—</b></div>
+      <div class="mrow"><span data-i18n="sizeLabel">Size</span><b id="m_filesize">—</b></div>
       <div class="mrow"><span>SHA256</span><b id="m_filehash">—</b></div>
-      <div class="mrow"><span>📱 手机应收</span><b id="m_chunkcount">—</b></div>
+      <div class="mrow"><span data-i18n="phoneReceives">📱 Phone receives</span><b id="m_chunkcount">—</b></div>
       <div class="mrow"><span>encode_id</span><b id="m_encodeid">—</b></div>
     </div>
-    <div class="panel-title" id="jumpTitle">跳转目标 <span class="sub">单击跳 · 双击锁 🔒</span></div>
+    <div class="panel-title" id="jumpTitle"><span data-i18n="jumpTitle">Jump target</span> <span class="sub" data-i18n="jumpSub">Click to jump · double-click to lock 🔒</span></div>
     <div id="chunkJumpBar"></div>
   </div>
 
   <div id="center">
     <canvas id="canvas"></canvas>
+    <button id="btnExitFullscreen" type="button" data-i18n="exitFullscreen">Exit fullscreen</button>
   </div>
 
   <div id="right-panel" class="side-panel">
     <div id="chunkConfirm">
-      <button id="btnConfirmChunk" type="button" class="primary">✅ 已保存, 跳下一块</button>
-      <span class="stats" id="confirmStats">0 / 0 已保存</span>
-      <span class="hint">📱 CFC 弹出"保存到哪里"对话框并完成保存后, 点这个按钮标记当前块为已保存并跳到下一个未完成块</span>
-      <button id="btnResetCompleted" type="button" class="secondary" title="清空当前文件的已保存进度">↺ 清空</button>
+      <button id="btnConfirmChunk" type="button" class="primary" data-i18n="confirmChunk">✅ Saved, jump to next</button>
+      <span class="stats" id="confirmStats">0 / 0 saved</span>
+      <span class="hint" data-i18n="confirmHint">📱 After CFC opens the save dialog and finishes saving, mark this chunk as saved and jump to the next unfinished chunk</span>
+      <button id="btnResetCompleted" type="button" class="secondary" data-i18n="reset" data-i18n-title="resetTitle" title="Clear saved progress for this file">↺ Clear</button>
     </div>
 
     <div id="progress">
-      <div id="p_hint" style="margin-bottom: 6px; color: #f5b942; font-weight: 500; text-align: center;">
-        💡 等手机 CFC 弹出 <span id="p_savecount" style="color: #5fbcff; font-size: 14px;">—</span> 次"保存到哪里"对话框（每次都选同一个目录）后即可点停止
+      <div id="p_hint" data-i18n-html="initialReceiveHint" style="margin-bottom: 6px; color: #f5b942; font-weight: 500; text-align: center;">
+        💡 Wait for CFC to show the save dialog <span id="p_savecount" style="color: #5fbcff; font-size: 14px;">—</span> times (choose the same folder each time), then stop
       </div>
       <div class="row">
-        <span><span class="label">当前块:</span> <span class="value" id="p_chunk">—</span></span>
-        <span><span class="label">本块帧数:</span> <span class="value" id="p_frame">—</span></span>
-        <span><span class="label">总进度:</span> <span class="value" id="p_total">0%</span></span>
-        <span><span class="label">已用:</span> <span class="value" id="p_elapsed">—</span></span>
-        <span><span class="label">剩余:</span> <span class="value" id="p_eta">—</span></span>
+        <span><span class="label" data-i18n="currentChunk">Current chunk:</span> <span class="value" id="p_chunk">—</span></span>
+        <span><span class="label" data-i18n="chunkFrames">Chunk frames:</span> <span class="value" id="p_frame">—</span></span>
+        <span><span class="label" data-i18n="totalProgress">Total progress:</span> <span class="value" id="p_total">0%</span></span>
+        <span><span class="label" data-i18n="elapsed">Elapsed:</span> <span class="value" id="p_elapsed">—</span></span>
+        <span><span class="label" data-i18n="remaining">Remaining:</span> <span class="value" id="p_eta">—</span></span>
       </div>
       <div class="bar-bg"><div class="bar-fg" id="p_bar"></div></div>
     </div>
@@ -418,6 +442,262 @@
 
 // ============= 工具函数 =============
 function $(id) { return document.getElementById(id); }
+
+const LOCALE_STORAGE_KEY = 'cimbar-bigfile:locale';
+const I18N = {
+  en: {
+    documentTitle: 'cimbar-bigfile · Sender',
+    presetLabel: 'Preset',
+    presetTitle: 'Switch FPS and redundancy for the scanning conditions; choose Custom to fine-tune them',
+    presetBalanced: 'Balanced (recommended)',
+    presetAggressive: 'Aggressive (tripod + good light)',
+    presetConservative: 'Conservative (handheld / poor light)',
+    presetCustom: 'Custom',
+    chunkSizeLabel: 'Chunk size',
+    redundancyLabel: 'Redundancy',
+    redundancyTitle: 'Fountain-code redundancy multiplier. Extra redundancy sends more frames without delaying CFC once it has enough data. Suggested: 1.5× safe / 2× default / 3–4× extreme conditions',
+    throughputTitle: 'Physical maximum = FPS × 7500 B; lower bound = maximum / redundancy. Actual speed depends on lighting and focus',
+    throughput: 'Expected ~{min}–{max} KB/s',
+    start: 'Start transmission',
+    stop: 'Stop',
+    fullscreen: 'Fullscreen code',
+    fullscreenTitle: 'Show only the encoded image in fullscreen for easier scanning',
+    fullscreenUnavailable: 'Fullscreen is available during an active transmission',
+    fullscreenUnsupported: 'This browser does not support fullscreen',
+    exitFullscreen: 'Exit fullscreen',
+    debugTitle: 'Toggle logs',
+    switchLanguage: 'Switch to Chinese',
+    targetLanguage: '中文',
+    dropHint: 'Drop one file / click to choose / Ctrl+V to stage',
+    dropSub: 'Pasted text is saved as .txt; stage multiple files or folders to send them as one archive',
+    addFiles: 'Add files',
+    addFolder: 'Add folder',
+    sendBundle: 'Pack and start',
+    clearBundle: 'Clear staged items',
+    stagedEmpty: '0 staged items',
+    stagedCount: '{count} staged items · {size}',
+    preparedTitle: 'Ready to send',
+    fileLabel: 'File',
+    sizeLabel: 'Size',
+    modeLabel: 'Mode',
+    phoneReceives: '📱 Receive',
+    jumpTitle: 'Jump target',
+    jumpSub: 'Click to jump · double-click to lock 🔒',
+    jumpButtonTitle: 'Click to jump · double-click or Shift+click to lock 🔒',
+    confirmChunk: '✅ Saved, jump to next',
+    confirmStats: '{done} / {total} saved',
+    confirmHint: '📱 After CFC opens the save dialog and finishes saving, mark this chunk as saved and jump to the next unfinished chunk',
+    reset: '↺ Clear',
+    resetTitle: 'Clear saved progress for this file',
+    currentChunk: 'Current chunk:',
+    chunkFrames: 'Chunk frames:',
+    totalProgress: 'Total progress:',
+    elapsed: 'Elapsed:',
+    remaining: 'Remaining:',
+    initialReceiveHint: '💡 Wait for CFC to open the save dialog for every received file (choose the same folder each time), then stop.',
+    simpleReceiveCount: '1 file · direct transfer',
+    multiReceiveCount: '{total} files · manifest + {chunks} chunks',
+    simpleReceiveHint: '💡 CFC will save <b style="color:#5fbcff">1 file</b> with its original name. Stop after CFC opens the save dialog and the file is saved.',
+    multiReceiveHint: '💡 Wait for CFC to show the save dialog <span style="color:#5fbcff;font-size:14px;">{total}</span> times (choose the same folder each time), then stop.',
+    simplePreparedMode: 'Direct single-file transfer',
+    multiPreparedMode: '{total} received files; reassembly required',
+    roundSuffix: ' (round {round})',
+    lockedProgress: '🔒 Locked on {chunk}',
+    refillProgress: '{count} refill rounds; unlock or select another chunk to continue',
+    firstRoundEta: 'First round ~{time}',
+    continuousProgress: '🔁 Continuous transmission',
+    continuousEta: 'Sending refill rounds; stop at any time',
+    durationHours: '{hours}h {minutes}m {seconds}s',
+    durationMinutes: '{minutes}m {seconds}s',
+    durationSeconds: '{seconds}s',
+    errArchivePathTooLong: 'Archive path is too long: {path}',
+    errTarFieldTooLong: 'tar header field is too long: {value}',
+    errTarNumberTooLarge: 'tar header number is too large: {value}',
+    logStaged: 'Staged "{path}" ({size})',
+    logBundlePacking: 'Ignored: the bundle is being packed',
+    logArchiveCreated: 'Created archive "{name}" ({size})',
+    logArchiveFailed: 'Failed to create archive: {error}',
+    logWasmReady: 'WASM runtime initialized',
+    logModeConfigured: 'Configured mode B',
+    logIdealRatio: 'cimbar ideal aspect ratio: {ratio}',
+    logPreparingBusy: 'Ignored "{name}": another file is still being prepared. Try again when it finishes.',
+    logPreparing: 'Preparing "{name}" ({size})',
+    logSimpleMode: 'Simple mode: one fountain stream using the original filename "{name}"; no manifest',
+    logSliced: 'Sliced into {count} chunks; manifest = {bytes} bytes',
+    logPrepareFailed: 'Failed to prepare "{name}": {error}',
+    logCannotStart: 'Cannot start: WASM or file is not ready',
+    logStarting: 'Starting transmission: interval={interval} ms, redundancy={redundancy}×, mode={mode}',
+    simpleModeName: 'simple',
+    multiModeName: 'multi',
+    logStopped: 'Stopped. Drop a new file to replace it, or start again to continue with the current file.',
+    logJump: 'Jumping to {chunk}',
+    logJumpApplied: '>>> Jumped to {chunk}',
+    logUnlocked: '🔓 Unlocked {chunk}; resumed free looping',
+    logLocked: '🔒 Locked {chunk}; repeatedly sending refill frames for this chunk',
+    logRestored: 'Restored saved progress for {count} chunks from the previous session',
+    logRestoreFailed: 'Failed to read saved progress: {error}',
+    logSaveProgressFailed: 'Failed to save progress: {error}',
+    logMarkedSaved: 'Marked "{chunk}" as saved ({done}/{total})',
+    logAllSaved: '✅ All chunks are marked as saved. You can stop now.',
+    logNothingSaved: 'No chunks are currently marked as saved',
+    logClearedSaved: 'Cleared saved marks for {count} chunks',
+    logLockedRefill: '🔒 Locked {chunk}; refill round {count}',
+    logSimpleLoop: 'Single-file stream sent for {count} round(s). Looping.',
+    logSendingSimple: '>>> Sending "{name}" ({size}, ~{frames} frames, simple mode)',
+    logAllStreamsLoop: 'All streams sent for {count} round(s). Looping back to the manifest.',
+    logSendingManifest: '>>> Sending manifest ({bytes} bytes, ~{frames} frames)',
+    logSendingChunk: '>>> Chunk {index}/{total} "{name}" ({size}, ~{frames} frames)',
+    logBundleCleared: 'Cleared staged bundle items',
+    logAutoStopped: 'Stopped the previous transmission before loading a new file',
+    logLoaded: 'Loaded "{name}" ({size}). Select Start transmission when ready.',
+    logPageLoaded: 'Page loaded; waiting for the WASM runtime…',
+    logFullscreenEntered: 'Entered code fullscreen',
+    logFullscreenExited: 'Exited code fullscreen',
+    logFullscreenFailed: 'Fullscreen operation failed: {error}',
+  },
+  'zh-CN': {
+    documentTitle: 'cimbar-bigfile · 发送端',
+    presetLabel: '预设',
+    presetTitle: '按场景一键切换 FPS 和冗余；选择自定义后可手动微调',
+    presetBalanced: '默认（推荐）',
+    presetAggressive: '激进（固定支架 + 良好光线）',
+    presetConservative: '保守（手持 / 差光线）',
+    presetCustom: '自定义',
+    chunkSizeLabel: '块大小',
+    redundancyLabel: '冗余',
+    redundancyTitle: 'fountain code 冗余倍数。多余冗余仅增加发送帧数，CFC 收齐数据后不受影响。建议：1.5× 安全 / 2× 默认 / 3–4× 极端环境',
+    throughputTitle: '物理上限 = FPS × 7500 B；区间下限 = 上限 / 冗余。实际速度受光线和对焦影响',
+    throughput: '预期 ~{min}–{max} KB/s',
+    start: '开始传输',
+    stop: '停止',
+    fullscreen: '全屏显示码图',
+    fullscreenTitle: '仅全屏显示编码图像，方便相机扫描',
+    fullscreenUnavailable: '传输开始后可全屏显示码图',
+    fullscreenUnsupported: '当前浏览器不支持全屏',
+    exitFullscreen: '退出全屏',
+    debugTitle: '切换日志显示',
+    switchLanguage: 'Switch to English',
+    targetLanguage: 'EN',
+    dropHint: '拖入单文件 / 点击选择 / Ctrl+V 暂存',
+    dropSub: '粘贴的文本会自动保存为 .txt；多个文件或文件夹可暂存后打包发送',
+    addFiles: '添加文件',
+    addFolder: '添加文件夹',
+    sendBundle: '打包并开始传输',
+    clearBundle: '清空暂存',
+    stagedEmpty: '暂存 0 项',
+    stagedCount: '暂存 {count} 项 · {size}',
+    preparedTitle: '已准备发送',
+    fileLabel: '文件',
+    sizeLabel: '大小',
+    modeLabel: '发送方式',
+    phoneReceives: '📱 接收',
+    jumpTitle: '跳转目标',
+    jumpSub: '单击跳转 · 双击锁定 🔒',
+    jumpButtonTitle: '单击跳转 · 双击或 Shift+点击锁定 🔒',
+    confirmChunk: '✅ 已保存，跳下一块',
+    confirmStats: '{done} / {total} 已保存',
+    confirmHint: '📱 CFC 弹出保存对话框并完成保存后，点击按钮标记当前块并跳到下一个未完成块',
+    reset: '↺ 清空',
+    resetTitle: '清空当前文件的已保存进度',
+    currentChunk: '当前块：',
+    chunkFrames: '本块帧数：',
+    totalProgress: '总进度：',
+    elapsed: '已用：',
+    remaining: '剩余：',
+    initialReceiveHint: '💡 等 CFC 为每个接收文件弹出保存对话框（每次选同一目录）后即可停止。',
+    simpleReceiveCount: '1 个文件 · 直接传输',
+    multiReceiveCount: '{total} 个文件 · manifest + {chunks} 块',
+    simpleReceiveHint: '💡 CFC 会保存 <b style="color:#5fbcff">1 个文件</b>，文件名即原文件名，无需拼接。等 CFC 弹出保存对话框并完成保存后即可停止。',
+    multiReceiveHint: '💡 等 CFC 弹出保存对话框 <span style="color:#5fbcff;font-size:14px;">{total}</span> 次（每次选同一目录）后即可停止。',
+    simplePreparedMode: '单文件直发',
+    multiPreparedMode: '{total} 个接收文件，需拼接',
+    roundSuffix: '（第 {round} 轮）',
+    lockedProgress: '🔒 锁定 {chunk}',
+    refillProgress: '补帧 {count} 轮，解锁或切换其他块后继续',
+    firstRoundEta: '首轮约 {time}',
+    continuousProgress: '🔁 持续传输中',
+    continuousEta: '正在循环补帧，可随时停止',
+    durationHours: '{hours}小时 {minutes}分 {seconds}秒',
+    durationMinutes: '{minutes}分 {seconds}秒',
+    durationSeconds: '{seconds}秒',
+    errArchivePathTooLong: '归档路径过长：{path}',
+    errTarFieldTooLong: 'tar 头字段过长：{value}',
+    errTarNumberTooLarge: 'tar 头数值过大：{value}',
+    logStaged: '已暂存“{path}”（{size}）',
+    logBundlePacking: '已忽略：正在打包暂存项',
+    logArchiveCreated: '已创建归档“{name}”（{size}）',
+    logArchiveFailed: '创建归档失败：{error}',
+    logWasmReady: 'WASM 运行时已初始化',
+    logModeConfigured: '已配置模式 B',
+    logIdealRatio: 'cimbar 理想宽高比：{ratio}',
+    logPreparingBusy: '已忽略“{name}”：上一个文件仍在准备，请稍后重试。',
+    logPreparing: '正在准备“{name}”（{size}）',
+    logSimpleMode: '单文件模式：使用原文件名“{name}”的单 fountain stream，无 manifest',
+    logSliced: '已切成 {count} 块；manifest = {bytes} 字节',
+    logPrepareFailed: '准备“{name}”失败：{error}',
+    logCannotStart: '无法开始：WASM 或文件尚未就绪',
+    logStarting: '开始传输：间隔={interval} ms，冗余={redundancy}×，模式={mode}',
+    simpleModeName: '单文件',
+    multiModeName: '多块',
+    logStopped: '已停止。拖入新文件可替换，或再次开始以继续当前文件。',
+    logJump: '正在跳转到 {chunk}',
+    logJumpApplied: '>>> 已跳转到 {chunk}',
+    logUnlocked: '🔓 已解锁 {chunk}，恢复自由循环',
+    logLocked: '🔒 已锁定 {chunk}，将反复发送该块的补帧',
+    logRestored: '已从上次会话恢复 {count} 块的已保存进度',
+    logRestoreFailed: '读取已保存进度失败：{error}',
+    logSaveProgressFailed: '保存进度失败：{error}',
+    logMarkedSaved: '已将“{chunk}”标记为已保存（{done}/{total}）',
+    logAllSaved: '✅ 所有块均已标记为已保存，现在可以停止。',
+    logNothingSaved: '当前没有已标记为已保存的块',
+    logClearedSaved: '已清空 {count} 块的已保存标记',
+    logLockedRefill: '🔒 已锁定 {chunk}；补帧第 {count} 轮',
+    logSimpleLoop: '单文件数据流已发送 {count} 轮，开始循环。',
+    logSendingSimple: '>>> 正在发送“{name}”（{size}，约 {frames} 帧，单文件模式）',
+    logAllStreamsLoop: '所有数据流已发送 {count} 轮，回到 manifest。',
+    logSendingManifest: '>>> 正在发送 manifest（{bytes} 字节，约 {frames} 帧）',
+    logSendingChunk: '>>> 第 {index}/{total} 块“{name}”（{size}，约 {frames} 帧）',
+    logBundleCleared: '已清空暂存项',
+    logAutoStopped: '已停止上一个传输并加载新文件',
+    logLoaded: '已加载“{name}”（{size}），准备好后点击开始传输。',
+    logPageLoaded: '页面已加载，正在等待 WASM 运行时…',
+    logFullscreenEntered: '已进入码图全屏',
+    logFullscreenExited: '已退出码图全屏',
+    logFullscreenFailed: '全屏操作失败：{error}',
+  },
+};
+
+function readStoredLocale() {
+  try {
+    const stored = localStorage.getItem(LOCALE_STORAGE_KEY);
+    return stored === 'zh-CN' || stored === 'en' ? stored : 'en';
+  } catch (_) {
+    return 'en';
+  }
+}
+
+let currentLocale = readStoredLocale();
+
+function localizedValue(value) {
+  if (value && value.i18nKey) return t(value.i18nKey, value.i18nParams);
+  if (value instanceof Error) return value.message || String(value);
+  return String(value);
+}
+
+function t(key, params = {}) {
+  const template = (I18N[currentLocale] && I18N[currentLocale][key]) || I18N.en[key] || key;
+  return template.replace(/\{(\w+)\}/g, (_, name) =>
+    Object.prototype.hasOwnProperty.call(params, name) ? localizedValue(params[name]) : `{${name}}`
+  );
+}
+
+function appError(key, params = {}) {
+  const err = new Error(key);
+  err.i18nKey = key;
+  err.i18nParams = params;
+  return err;
+}
+
 function fmtBytes(n) {
   if (n < 1024) return n + ' B';
   if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
@@ -429,19 +709,41 @@ function fmtTime(ms) {
   const s = Math.floor(ms / 1000);
   const m = Math.floor(s / 60);
   const h = Math.floor(m / 60);
-  if (h > 0) return `${h}h ${m % 60}m ${s % 60}s`;
-  if (m > 0) return `${m}m ${s % 60}s`;
-  return `${s}s`;
+  if (h > 0) return t('durationHours', { hours: h, minutes: m % 60, seconds: s % 60 });
+  if (m > 0) return t('durationMinutes', { minutes: m, seconds: s % 60 });
+  return t('durationSeconds', { seconds: s });
 }
-function log(msg, cls) {
+
+const logEntries = [];
+
+function appendLogEntry(entry) {
+  logEntries.push({ ...entry, time: new Date() });
+  renderLogs();
+  const message = entry.raw ? entry.message : t(entry.key, entry.params);
+  console.log(`[cimbar-bigfile] ${message}`);
+}
+
+function logI18n(key, params = {}, cls) {
+  appendLogEntry({ key, params, cls, raw: false });
+}
+
+function logRaw(message, cls) {
+  appendLogEntry({ message: String(message), cls, raw: true });
+}
+
+function renderLogs() {
   const el = $('log');
-  const div = document.createElement('div');
-  if (cls) div.className = cls;
-  const ts = new Date().toLocaleTimeString();
-  div.textContent = `[${ts}] ${msg}`;
-  el.appendChild(div);
+  if (!el) return;
+  el.innerHTML = '';
+  for (const entry of logEntries) {
+    const div = document.createElement('div');
+    if (entry.cls) div.className = entry.cls;
+    const ts = entry.time.toLocaleTimeString(currentLocale);
+    const message = entry.raw ? entry.message : t(entry.key, entry.params);
+    div.textContent = `[${ts}] ${message}`;
+    el.appendChild(div);
+  }
   el.scrollTop = el.scrollHeight;
-  console.log(`[cimbar-bigfile] ${msg}`);
 }
 async function sha256Hex(uint8) {
   const buf = await crypto.subtle.digest('SHA-256', uint8);
@@ -536,7 +838,7 @@ function uniqueArchivePath(path) {
 function addBundleFile(file, path) {
   const safePath = uniqueArchivePath(sanitizeArchivePath(path || file.webkitRelativePath || file.name));
   State.bundleItems.push({ path: safePath, file });
-  log(`Staged "${safePath}" (${fmtBytes(file.size)})`, 'ok');
+  logI18n('logStaged', { path: safePath, size: fmtBytes(file.size) }, 'ok');
 }
 
 function addBundleText(text) {
@@ -553,9 +855,7 @@ function renderBundleList() {
   if (count > 0) {
     renderPreparedPanel(null);
   }
-  $('bundleSummary').textContent = count === 0
-    ? '暂存 0 项'
-    : `暂存 ${count} 项 · ${fmtBytes(State.bundleItems.reduce((sum, item) => sum + item.file.size, 0))}`;
+  updateBundleSummary();
   list.innerHTML = '';
   for (const item of State.bundleItems) {
     const row = document.createElement('div');
@@ -567,6 +867,16 @@ function renderBundleList() {
     list.appendChild(row);
   }
   updateUiState();
+}
+
+function updateBundleSummary() {
+  const count = State.bundleItems.length;
+  $('bundleSummary').textContent = count === 0
+    ? t('stagedEmpty')
+    : t('stagedCount', {
+      count,
+      size: fmtBytes(State.bundleItems.reduce((sum, item) => sum + item.file.size, 0)),
+    });
 }
 
 function renderPreparedPanel(info) {
@@ -583,7 +893,14 @@ function renderPreparedPanel(info) {
   $('preparedName').textContent = info.name;
   $('preparedSize').textContent = info.size;
   $('preparedHash').textContent = info.sha256;
-  $('preparedMode').textContent = info.mode;
+  updatePreparedMode();
+}
+
+function updatePreparedMode() {
+  if (!$('preparedPanel').classList.contains('visible') || State.chunks.length === 0) return;
+  $('preparedMode').textContent = State.simpleMode
+    ? t('simplePreparedMode')
+    : t('multiPreparedMode', { total: State.chunks.length + 1 });
 }
 
 function escapeHtml(s) {
@@ -592,7 +909,7 @@ function escapeHtml(s) {
 
 async function stageFiles(files) {
   if (_packingBundle) {
-    log('Ignored: bundle is being packed', 'err');
+    logI18n('logBundlePacking', {}, 'err');
     return;
   }
   for (const file of files) {
@@ -608,24 +925,24 @@ function splitTarPath(path) {
   const hasTrailingSlash = path.endsWith('/');
   const pathForSplit = hasTrailingSlash ? path.slice(0, -1) : path;
   const slash = pathForSplit.lastIndexOf('/');
-  if (slash <= 0) throw new Error(`Archive path is too long: ${path}`);
+  if (slash <= 0) throw appError('errArchivePathTooLong', { path });
   const prefix = pathForSplit.slice(0, slash);
   const name = pathForSplit.slice(slash + 1) + (hasTrailingSlash ? '/' : '');
   if (enc.encode(name).length > 100 || enc.encode(prefix).length > 155) {
-    throw new Error(`Archive path is too long: ${path}`);
+    throw appError('errArchivePathTooLong', { path });
   }
   return { name, prefix };
 }
 
 function writeAscii(buf, offset, length, value) {
   const bytes = new TextEncoder().encode(value);
-  if (bytes.length > length) throw new Error(`tar header field too long: ${value}`);
+  if (bytes.length > length) throw appError('errTarFieldTooLong', { value });
   buf.set(bytes, offset);
 }
 
 function writeOctal(buf, offset, length, value) {
   const text = Math.floor(value).toString(8);
-  if (text.length > length - 1) throw new Error(`tar header number too large: ${value}`);
+  if (text.length > length - 1) throw appError('errTarNumberTooLarge', { value });
   writeAscii(buf, offset, length - 1, text.padStart(length - 1, '0'));
   buf[offset + length - 1] = 0;
 }
@@ -700,13 +1017,13 @@ async function sendBundle() {
   updateUiState();
   try {
     const archive = await createTarFile(items);
-    log(`Created archive "${archive.name}" (${fmtBytes(archive.size)})`, 'ok');
+    logI18n('logArchiveCreated', { name: archive.name, size: fmtBytes(archive.size) }, 'ok');
     await prepareFile(archive);
     if (wasmReady && State.chunks.length > 0) {
       startTransmission();
     }
   } catch (err) {
-    log(`Failed to create archive: ${(err && err.message) || err}`, 'err');
+    logI18n('logArchiveFailed', { error: err }, 'err');
   } finally {
     _packingBundle = false;
     updateUiState();
@@ -717,6 +1034,101 @@ async function sendBundle() {
 let wasmReady = false;
 let _idealRatio = 1;
 let _packingBundle = false;
+let _fullscreenControlsTimer = null;
+let _wasCodeFullscreen = false;
+let _fullscreenRequestPending = false;
+let _fullscreenRequestCancelled = false;
+let _fullscreenExitPromise = null;
+
+function fullscreenElement() {
+  return document.fullscreenElement || document.webkitFullscreenElement || null;
+}
+
+function fullscreenSupported() {
+  const center = $('center');
+  return !!(center && (center.requestFullscreen || center.webkitRequestFullscreen));
+}
+
+function isCodeFullscreen() {
+  return fullscreenElement() === $('center');
+}
+
+function showFullscreenControls() {
+  if (!isCodeFullscreen()) return;
+  const center = $('center');
+  center.classList.remove('fullscreen-controls-hidden');
+  clearTimeout(_fullscreenControlsTimer);
+  _fullscreenControlsTimer = setTimeout(() => {
+    if (isCodeFullscreen()) center.classList.add('fullscreen-controls-hidden');
+  }, 2200);
+}
+
+async function requestCodeFullscreen() {
+  if (!State.active || !fullscreenSupported() || isCodeFullscreen() || _fullscreenRequestPending) return;
+  const center = $('center');
+  const request = center.requestFullscreen || center.webkitRequestFullscreen;
+  _fullscreenRequestPending = true;
+  _fullscreenRequestCancelled = false;
+  updateFullscreenButton();
+  try {
+    await Promise.resolve(request.call(center));
+  } catch (err) {
+    logI18n('logFullscreenFailed', { error: err }, 'err');
+  } finally {
+    const shouldExit = _fullscreenRequestCancelled || !State.active;
+    _fullscreenRequestPending = false;
+    if (shouldExit && isCodeFullscreen()) await exitCodeFullscreen();
+    _fullscreenRequestCancelled = false;
+    updateFullscreenButton();
+  }
+}
+
+async function exitCodeFullscreen() {
+  if (_fullscreenExitPromise) return _fullscreenExitPromise;
+  if (!isCodeFullscreen()) return;
+  const exit = document.exitFullscreen || document.webkitExitFullscreen;
+  if (!exit) return;
+  _fullscreenExitPromise = Promise.resolve()
+    .then(() => exit.call(document))
+    .catch(err => logI18n('logFullscreenFailed', { error: err }, 'err'))
+    .finally(() => { _fullscreenExitPromise = null; });
+  return _fullscreenExitPromise;
+}
+
+function handleFullscreenChange() {
+  const active = isCodeFullscreen();
+  const center = $('center');
+  if (active && (!State.active || _fullscreenRequestCancelled)) {
+    center.classList.remove('fullscreen-active', 'fullscreen-controls-hidden');
+    clearTimeout(_fullscreenControlsTimer);
+    _wasCodeFullscreen = false;
+    void exitCodeFullscreen();
+    updateFullscreenButton();
+    return;
+  }
+  center.classList.toggle('fullscreen-active', active);
+  center.classList.remove('fullscreen-controls-hidden');
+  clearTimeout(_fullscreenControlsTimer);
+  if (active) {
+    showFullscreenControls();
+    if (!_wasCodeFullscreen) logI18n('logFullscreenEntered', {}, 'ok');
+  } else if (_wasCodeFullscreen) {
+    logI18n('logFullscreenExited', {}, 'ok');
+  }
+  _wasCodeFullscreen = active;
+  requestAnimationFrame(fitCanvas);
+  updateFullscreenButton();
+}
+
+function updateFullscreenButton() {
+  const button = $('btnFullscreen');
+  if (!button) return;
+  const supported = fullscreenSupported();
+  button.disabled = !State.active || !supported || isCodeFullscreen() || _fullscreenRequestPending;
+  button.title = !supported
+    ? t('fullscreenUnsupported')
+    : (State.active ? t('fullscreenTitle') : t('fullscreenUnavailable'));
+}
 
 // 每侧(横屏)/上下(竖屏)栏的最小留白, 保证跳转列表 + 进度信息可读.
 // 宽屏 (≥ ~1334w) 用 200 桌面观感不缩; 窄屏 (低分辨率横屏/平板分屏) 按 mw 的 15% 缩放, 下限 120 兜底.
@@ -731,7 +1143,25 @@ function computeMinPanel(mw) {
 function fitCanvas() {
   const canvas = $('canvas');
   const main = $('main');
-  if (!canvas || !main) return;
+  const center = $('center');
+  if (!canvas || !main || !center) return;
+  const ratio = _idealRatio || 1;   // 码 宽/高 (Mode B = 1, 正方形)
+
+  if (wasmReady && Module._cimbare_rotate_window) {
+    Module._cimbare_rotate_window(false);  // 正方形码无需旋转
+  }
+
+  if (isCodeFullscreen()) {
+    const fw = center.clientWidth;
+    const fh = center.clientHeight;
+    if (fw <= 0 || fh <= 0) return;
+    const cw = Math.max(80, Math.floor(Math.min(fw, fh * ratio)));
+    const ch = Math.max(80, Math.floor(cw / ratio));
+    canvas.style.width = cw + 'px';
+    canvas.style.height = ch + 'px';
+    return;
+  }
+
   const mw = main.clientWidth;
   const mh = main.clientHeight;
   if (mw <= 0 || mh <= 0) return;
@@ -741,11 +1171,6 @@ function fitCanvas() {
   const minPanel = computeMinPanel(mw);
   const portrait = mh > mw || (mw - 2 * minPanel) < 80;
   main.classList.toggle('portrait', portrait);
-
-  const ratio = _idealRatio || 1;   // 码 宽/高 (Mode B = 1, 正方形)
-  if (wasmReady && Module._cimbare_rotate_window) {
-    Module._cimbare_rotate_window(false);  // 正方形码无需旋转
-  }
 
   let cw, ch;
   if (!portrait) {
@@ -764,23 +1189,34 @@ function fitCanvas() {
 }
 
 window.addEventListener('resize', fitCanvas);
+document.addEventListener('fullscreenchange', handleFullscreenChange);
+document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+$('center').addEventListener('mousemove', showFullscreenControls);
+$('center').addEventListener('focusin', showFullscreenControls);
+window.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && isCodeFullscreen()) {
+    void exitCodeFullscreen();
+    return;
+  }
+  showFullscreenControls();
+});
 
 // Pre-define Module so the wasm glue can find it
 window.Module = {
   canvas: $('canvas'),
   onRuntimeInitialized: function () {
-    log('WASM runtime initialized', 'ok');
+    logI18n('logWasmReady', {}, 'ok');
     wasmReady = true;
     // Mode B = 68
     Module._cimbare_configure(68, -1);
-    log('Configured mode B', 'ok');
+    logI18n('logModeConfigured', {}, 'ok');
     _idealRatio = Module._cimbare_get_aspect_ratio() || 1;
-    log('cimbar ideal aspect ratio: ' + _idealRatio.toFixed(4), 'ok');
+    logI18n('logIdealRatio', { ratio: _idealRatio.toFixed(4) }, 'ok');
     fitCanvas();
     updateUiState();
   },
-  print: function (text) { log('[wasm] ' + text); },
-  printErr: function (text) { log('[wasm err] ' + text, 'err'); },
+  print: function (text) { logRaw('[wasm] ' + text); },
+  printErr: function (text) { logRaw('[wasm err] ' + text, 'err'); },
 };
 
 function callInitEncode(filename, encodeId) {
@@ -789,7 +1225,7 @@ function callInitEncode(filename, encodeId) {
   try {
     new Uint8Array(Module.HEAPU8.buffer, fnPtr, fnBytes.length).set(fnBytes);
     const ret = Module._cimbare_init_encode(fnPtr, fnBytes.length, encodeId);
-    log(`init_encode("${filename}", id=${encodeId}) → ${ret}`);
+    logRaw(`init_encode("${filename}", id=${encodeId}) → ${ret}`);
     return ret;
   } finally {
     Module._free(fnPtr);
@@ -818,19 +1254,27 @@ function feedAllBytes(uint8) {
 // 根据当前 State (simpleMode / chunks / manifestBytes / redundancy) 同步 UI 文案 + 重算 totalFramesNeeded.
 // prepareFile 末尾 + startTransmission 开头都调一次, 双重兜底 race condition (两次 prepareFile 交叉时
 // State 字段可能部分覆盖, 这里强制根据当前 State 重新派生所有依赖值).
+function renderModeCopy() {
+  if (State.chunks.length === 0) return;
+  if (State.simpleMode) {
+    $('m_chunkcount').textContent = t('simpleReceiveCount');
+    $('p_hint').innerHTML = t('simpleReceiveHint');
+  } else {
+    const n = State.chunks.length;
+    $('m_chunkcount').textContent = t('multiReceiveCount', { total: n + 1, chunks: n });
+    $('p_hint').innerHTML = t('multiReceiveHint', { total: n + 1 });
+  }
+  updatePreparedMode();
+}
+
 function applyMode() {
   if (State.chunks.length === 0) return;
   const r = State.redundancy || 1.5;
+  renderModeCopy();
   if (State.simpleMode) {
-    $('m_chunkcount').textContent = `1 个文件 (原文件直发, 无需拼接)`;
-    // 注意: 不能引用 p_savecount, 因为下面的 innerHTML 替换会删掉它 (它是 p_hint 的子节点),
-    // 第二次调 applyMode 时 $('p_savecount') 就 null 了
-    $('p_hint').innerHTML = '💡 手机 CFC 会保存 <b style="color:#5fbcff">1 个文件</b>, 文件名即原文件名, 无需拼接 — 等 CFC 弹出"保存到哪里"对话框并保存后即可点停止';
     State.totalFramesNeeded = framesNeededFor(State.chunks[0].length, r);
   } else {
     const n = State.chunks.length;
-    $('m_chunkcount').textContent = `${n + 1} 个文件 (1 manifest.json + ${n} 数据块)`;
-    $('p_hint').innerHTML = '💡 等手机 CFC 弹出 <span style="color:#5fbcff;font-size:14px;">' + (n + 1) + '</span> 次"保存到哪里"对话框（每次都选同一个目录）后即可点停止';
     let total = framesNeededFor(State.manifestBytes.length, r);
     for (const c of State.chunks) total += framesNeededFor(c.length, r);
     State.totalFramesNeeded = total;
@@ -844,7 +1288,7 @@ let _preparing = false;
 async function prepareFile(file) {
   // 串行化: 防止用户连续拖文件时两次 prepareFile 在 await 间交叉, 导致 State 字段错乱
   if (_preparing) {
-    log(`Ignored "${file.name}": still preparing previous file. Try again after current finishes.`, 'err');
+    logI18n('logPreparingBusy', { name: file.name }, 'err');
     // dropzone 边框闪红 600ms 给用户视觉反馈 (log 面板默认隐藏, 用户看不到 log)
     const dz = $('dropzone');
     const oldBorder = dz.style.borderColor;
@@ -868,7 +1312,7 @@ async function prepareFile(file) {
     $('btnStart').disabled = true;
     renderPreparedPanel(null);
 
-    log(`Preparing ${file.name} (${fmtBytes(file.size)})`);
+    logI18n('logPreparing', { name: file.name, size: fmtBytes(file.size) });
     State.file = file;
     $('m_filename').textContent = file.name;
     $('m_filesize').textContent = fmtBytes(file.size);
@@ -892,7 +1336,7 @@ async function prepareFile(file) {
       State.chunks = [fileBytes];
       State.manifest = null;
       State.manifestBytes = null;
-      log(`Simple mode: single fountain stream, filename "${file.name}", no manifest`, 'ok');
+      logI18n('logSimpleMode', { name: file.name }, 'ok');
     } else {
       // 多块模式: 切片 + 每块 SHA256 + manifest
       const chunkCount = Math.ceil(file.size / chunkSize);
@@ -919,14 +1363,13 @@ async function prepareFile(file) {
         chunks: chunkMeta,
       };
       State.manifestBytes = new TextEncoder().encode(JSON.stringify(State.manifest));
-      log(`Sliced into ${chunkCount} chunks, manifest = ${State.manifestBytes.length} bytes`, 'ok');
+      logI18n('logSliced', { count: chunkCount, bytes: State.manifestBytes.length }, 'ok');
     }
 
     renderPreparedPanel({
       name: file.name,
       size: fmtBytes(file.size),
       sha256: fullSha,
-      mode: State.simpleMode ? '单文件直发' : `${State.chunks.length + 1} 个接收文件，需拼接`,
     });
 
     loadCompletedFromStorage();  // multi 模式从 localStorage 恢复; simple 模式直接 reset (key=null 不读)
@@ -934,7 +1377,7 @@ async function prepareFile(file) {
     updateConfirmStats();
   } catch (err) {
     // OOM / arrayBuffer 失败等异常 — 把 UI 一起 reset, 避免半截信息让用户误以为加载成功
-    log(`Failed to prepare "${file.name}": ${(err && err.message) || err}`, 'err');
+    logI18n('logPrepareFailed', { name: file.name, error: err }, 'err');
     State.chunks = [];
     State.manifest = null;
     State.manifestBytes = null;
@@ -963,7 +1406,7 @@ function framesNeededFor(byteCount, redundancy) {
 // ============= 主循环 =============
 function startTransmission() {
   if (!wasmReady || State.chunks.length === 0) {
-    log('Cannot start: wasm or file not ready', 'err');
+    logI18n('logCannotStart', {}, 'err');
     return;
   }
   State.active = true;
@@ -992,12 +1435,19 @@ function startTransmission() {
   $('chunkSize').disabled = true;
   // dropzone 隐藏 + 三栏显示后布局落定, canvas 必须重新 fit, 否则尺寸/marker 不对 → CFC 扫不到
   requestAnimationFrame(fitCanvas);
-  log(`Starting transmission, interval=${State.interval}ms, redundancy=${State.redundancy}x, mode=${State.simpleMode ? 'simple' : 'multi'}`, 'ok');
+  updateFullscreenButton();
+  logI18n('logStarting', {
+    interval: State.interval,
+    redundancy: State.redundancy,
+    mode: { i18nKey: State.simpleMode ? 'simpleModeName' : 'multiModeName', i18nParams: {} },
+  }, 'ok');
   advanceToNextChunk();
   scheduleNextFrame();
 }
 
 function stopTransmission() {
+  if (_fullscreenRequestPending) _fullscreenRequestCancelled = true;
+  void exitCodeFullscreen();
   State.active = false;
   State.jumpRequested = null;
   State.lockedChunkIndex = -1;
@@ -1018,7 +1468,8 @@ function stopTransmission() {
   // 重渲按钮组让其变 disabled 样式 (State.active=false 已经设置)
   renderJumpButtons();
   updateUiState();
-  log('Stopped. 拖入新文件换文件, 或再点开始继续当前文件', 'ok');
+  updateFullscreenButton();
+  logI18n('logStopped', {}, 'ok');
 }
 
 // ============= 跳转目标列表 (multi 模式专用) =============
@@ -1039,7 +1490,7 @@ function renderJumpButtons() {
   const total = 1 + State.chunks.length;       // 0 = manifest, 1..N = 数据块
   const parts = [];
   // title 让鼠标 hover 看到完整交互说明, 键盘/屏读用户通过 tab focus + accessible name 也能读出
-  const titleAttr = ' title="单击跳转 · 双击或 Shift+点击 锁定 🔒"';
+  const titleAttr = ` title="${escapeHtml(t('jumpButtonTitle'))}"`;
   for (let i = 0; i < total; i++) {
     const dis = State.active ? '' : ' disabled';
     parts.push(`<button type="button" data-idx="${i}"${dis}${titleAttr}></button>`);
@@ -1069,13 +1520,19 @@ function renderJumpButtons() {
   renderChunkButtonStates();  // 填入文案 + 初始状态 (completed / locked 等)
 }
 
+function updateJumpButtonTitles() {
+  $('chunkJumpBar').querySelectorAll('button[data-idx]').forEach(btn => {
+    btn.title = t('jumpButtonTitle');
+  });
+}
+
 // 单击: 跳转到 idx 并进入自由模式 (清除锁定). 立即 advance 切换, active 高亮随即跟到该块 = 屏幕实际播放.
 function setJumpTarget(idx) {
   if (!State.active) return;
   State.jumpRequested = idx;
   State.lockedChunkIndex = -1;
   State.lockedRefillCount = 0;
-  log(`跳转到 ${chunkIndexLabel(idx)}`, 'ok');
+  logI18n('logJump', { chunk: chunkIndexLabel(idx) }, 'ok');
   advanceToNextChunk();   // 立即切换, 不等当前块发完估算帧 — 否则 10MB 块要等数分钟才换 (即"点了不动")
 }
 
@@ -1085,13 +1542,13 @@ function lockChunk(idx) {
   if (State.lockedChunkIndex === idx) {
     State.lockedChunkIndex = -1;
     State.lockedRefillCount = 0;
-    log(`🔓 解锁 ${chunkIndexLabel(idx)}, 恢复自由循环`, 'ok');
+    logI18n('logUnlocked', { chunk: chunkIndexLabel(idx) }, 'ok');
     renderChunkButtonStates();
   } else {
     State.lockedChunkIndex = idx;
     State.lockedRefillCount = 0;   // 切到新锁定块, 补帧计数从 0 重新开始
     State.jumpRequested = idx;
-    log(`🔒 锁定 ${chunkIndexLabel(idx)}, 发送端停在该块反复补帧`, 'ok');
+    logI18n('logLocked', { chunk: chunkIndexLabel(idx) }, 'ok');
     advanceToNextChunk();   // 立即切到并锁定
   }
 }
@@ -1139,10 +1596,10 @@ function loadCompletedFromStorage() {
       if (Number.isInteger(n) && n >= 0 && n < total) State.completedChunks.add(n);
     }
     if (State.completedChunks.size > 0) {
-      log(`恢复 ${State.completedChunks.size} 块已保存进度 (来自上次会话)`, 'ok');
+      logI18n('logRestored', { count: State.completedChunks.size }, 'ok');
     }
   } catch (e) {
-    log(`读取已保存进度失败: ${e.message}`, 'warn');
+    logI18n('logRestoreFailed', { error: e }, 'warn');
   }
 }
 
@@ -1152,17 +1609,17 @@ function saveCompletedToStorage() {
   try {
     localStorage.setItem(key, JSON.stringify([...State.completedChunks].sort((a, b) => a - b)));
   } catch (e) {
-    log(`保存进度失败: ${e.message}`, 'warn');
+    logI18n('logSaveProgressFailed', { error: e }, 'warn');
   }
 }
 
 function updateConfirmStats() {
   if (State.simpleMode || State.chunks.length === 0) {
-    $('confirmStats').textContent = '0 / 0 已保存';
+    $('confirmStats').textContent = t('confirmStats', { done: 0, total: 0 });
     return;
   }
   const total = 1 + State.chunks.length;
-  $('confirmStats').textContent = `${State.completedChunks.size} / ${total} 已保存`;
+  $('confirmStats').textContent = t('confirmStats', { done: State.completedChunks.size, total });
 }
 
 function chunkIndexLabel(idx) {
@@ -1181,7 +1638,9 @@ function markCurrentChunkCompleted() {
   const total = 1 + State.chunks.length;
   State.completedChunks.add(cur);
   saveCompletedToStorage();
-  log(`已标记 "${chunkIndexLabel(cur)}" 为已保存 (${State.completedChunks.size}/${total})`, 'ok');
+  logI18n('logMarkedSaved', {
+    chunk: chunkIndexLabel(cur), done: State.completedChunks.size, total,
+  }, 'ok');
   // 只改 completedChunks 状态, 用 renderChunkButtonStates 轻量同步 class/textContent;
   // 不调 renderJumpButtons 重建 DOM, 否则会丢挂起的单击定时器 + 50 块时重绑 listener 有 jank.
   renderChunkButtonStates();
@@ -1194,7 +1653,7 @@ function markCurrentChunkCompleted() {
     if (!State.completedChunks.has(idx)) { next = idx; break; }
   }
   if (next === -1) {
-    log('✅ 全部块都已标记为已保存! 现在可以点"停止"了～', 'ok');
+    logI18n('logAllSaved', {}, 'ok');
     return;
   }
   setJumpTarget(next);   // setJumpTarget 内部已立即 advance — 用户已确认收到, 不等当前块发完估算帧
@@ -1203,7 +1662,7 @@ function markCurrentChunkCompleted() {
 function resetCompleted() {
   if (State.simpleMode || State.chunks.length === 0) return;
   if (State.completedChunks.size === 0) {
-    log('当前没有已保存的块', 'warn');
+    logI18n('logNothingSaved', {}, 'warn');
     return;
   }
   // [P2 codex] 同 markCurrentChunkCompleted: 用户点 reset 时挂起的单击不应继续生效
@@ -1214,7 +1673,7 @@ function resetCompleted() {
   // 同上: 只改状态用 renderChunkButtonStates, 不重建 DOM
   renderChunkButtonStates();
   updateConfirmStats();
-  log(`已清空 ${prevCount} 块已保存标记`, 'ok');
+  logI18n('logClearedSaved', { count: prevCount }, 'ok');
 }
 
 function advanceToNextChunk() {
@@ -1224,7 +1683,7 @@ function advanceToNextChunk() {
     if (!State.simpleMode) {
       const target = State.jumpRequested;
       State.curChunkIndex = target - 1;
-      log(`>>> 跳转到 ${chunkIndexLabel(target)}`, 'ok');
+      logI18n('logJumpApplied', { chunk: chunkIndexLabel(target) }, 'ok');
     }
     State.jumpRequested = null;
   } else if (State.lockedChunkIndex >= 0 && !State.simpleMode) {
@@ -1237,7 +1696,9 @@ function advanceToNextChunk() {
     // 长时间锁定时每轮 advanceToNextChunk 都打 log 会刷屏 (10MB 块 ~150 帧 @15fps = 10s/轮 → 10 分钟刷 60 行);
     // 关键节点 (第 1 轮 + 每 10 轮) 打 log 即可, 进度面板的 p_eta 始终显示实时补帧次数兜底.
     if (State.lockedRefillCount === 1 || State.lockedRefillCount % 10 === 0) {
-      log(`🔒 锁定 ${chunkIndexLabel(State.lockedChunkIndex)}, 补帧第 ${State.lockedRefillCount} 轮`, 'ok');
+      logI18n('logLockedRefill', {
+        chunk: chunkIndexLabel(State.lockedChunkIndex), count: State.lockedRefillCount,
+      }, 'ok');
     }
   }
 
@@ -1248,14 +1709,16 @@ function advanceToNextChunk() {
     // 单文件模式: 只 1 个 stream, 反复循环用原文件名
     if (State.curChunkIndex >= 1) {
       State.loopCount = (State.loopCount || 0) + 1;
-      log(`Single-file stream sent ${State.loopCount}× round(s). Looping.`, 'ok');
+      logI18n('logSimpleLoop', { count: State.loopCount }, 'ok');
       State.curChunkIndex = 0;
     }
     const chunk = State.chunks[0];
     callInitEncode(State.file.name, State.encodeIdBase + 0);
     feedAllBytes(chunk);
     State.framesNeededInChunk = framesNeededFor(chunk.length, State.redundancy);
-    log(`>>> Sending "${State.file.name}" (${fmtBytes(chunk.length)}, ~${State.framesNeededInChunk} frames, simple mode)`, 'ok');
+    logI18n('logSendingSimple', {
+      name: State.file.name, size: fmtBytes(chunk.length), frames: State.framesNeededInChunk,
+    }, 'ok');
     return;
   }
 
@@ -1264,7 +1727,7 @@ function advanceToNextChunk() {
   if (State.curChunkIndex >= total) {
     // 关键: manifest 必须在循环里, 晚到的 CFC 才能拿到 manifest 识别 chunk 命名
     State.loopCount = (State.loopCount || 0) + 1;
-    log(`All streams sent ${State.loopCount}× round(s). Looping back to manifest.`, 'ok');
+    logI18n('logAllStreamsLoop', { count: State.loopCount }, 'ok');
     State.curChunkIndex = 0;
     State.framesInChunk = 0;
   }
@@ -1273,7 +1736,9 @@ function advanceToNextChunk() {
     callInitEncode('manifest.json', State.encodeIdBase + 0);
     feedAllBytes(State.manifestBytes);
     State.framesNeededInChunk = framesNeededFor(State.manifestBytes.length, State.redundancy);
-    log(`>>> Sending manifest (${State.manifestBytes.length} bytes, ~${State.framesNeededInChunk} frames)`, 'ok');
+    logI18n('logSendingManifest', {
+      bytes: State.manifestBytes.length, frames: State.framesNeededInChunk,
+    }, 'ok');
   } else {
     const dataIdx = State.curChunkIndex - 1;
     const chunk = State.chunks[dataIdx];
@@ -1283,7 +1748,13 @@ function advanceToNextChunk() {
     callInitEncode(partName, State.encodeIdBase + 1 + dataIdx);
     feedAllBytes(chunk);
     State.framesNeededInChunk = framesNeededFor(chunk.length, State.redundancy);
-    log(`>>> Chunk ${dataIdx + 1}/${State.chunks.length} "${partName}" (${fmtBytes(chunk.length)}, ~${State.framesNeededInChunk} frames)`, 'ok');
+    logI18n('logSendingChunk', {
+      index: dataIdx + 1,
+      total: State.chunks.length,
+      name: partName,
+      size: fmtBytes(chunk.length),
+      frames: State.framesNeededInChunk,
+    }, 'ok');
   }
 
   // 按钮状态跟随当前实际播放的 chunk (跳转 / 自然推进 / 循环回 manifest / 锁定补帧都同步).
@@ -1331,6 +1802,7 @@ function updateUiState() {
   $('btnAddFolder').disabled = State.active || _packingBundle;
   $('btnSendBundle').disabled = State.bundleItems.length === 0 || State.active || _preparing || _packingBundle;
   $('btnClearBundle').disabled = State.bundleItems.length === 0 || State.active || _packingBundle;
+  updateFullscreenButton();
 }
 
 function updateProgressUI() {
@@ -1338,12 +1810,13 @@ function updateProgressUI() {
   const isLocked = State.active && State.lockedChunkIndex >= 0 && !State.simpleMode;
 
   let curHuman;
+  const round = State.loopCount > 0 ? t('roundSuffix', { round: State.loopCount + 1 }) : '';
   if (State.simpleMode) {
-    curHuman = `1/1${State.loopCount > 0 ? ` (第 ${State.loopCount + 1} 轮)` : ''}`;
+    curHuman = `1/1${round}`;
   } else if (State.curChunkIndex === 0) {
-    curHuman = `manifest${State.loopCount > 0 ? ` (第 ${State.loopCount + 1} 轮)` : ''}`;
+    curHuman = `manifest${round}`;
   } else {
-    curHuman = `${State.curChunkIndex}/${State.chunks.length}${State.loopCount > 0 ? ` (第 ${State.loopCount + 1} 轮)` : ''}`;
+    curHuman = `${State.curChunkIndex}/${State.chunks.length}${round}`;
   }
   // 锁定状态集中在 p_total ("🔒 锁定 partXX") + p_eta ("补帧 N 轮"), p_chunk 不再重复加 🔒×N 减视觉噪声
   $('p_chunk').textContent = curHuman;
@@ -1356,9 +1829,9 @@ function updateProgressUI() {
   if (isLocked) {
     // 锁定模式: 全文件进度此时无意义 (用户已显式让发送端专攻一块, 不再均匀推进各 chunk).
     // 进度条占满 + 文案显式说明锁定状态, 防止与"🔁 持续传输中"(全文件循环)混淆.
-    $('p_total').textContent = `🔒 锁定 ${chunkIndexLabel(State.lockedChunkIndex)}`;
+    $('p_total').textContent = t('lockedProgress', { chunk: chunkIndexLabel(State.lockedChunkIndex) });
     $('p_bar').style.width = '100%';
-    $('p_eta').textContent = `补帧 ${State.lockedRefillCount} 轮, 解锁/切别块即可继续`;
+    $('p_eta').textContent = t('refillProgress', { count: State.lockedRefillCount });
   } else if (State.loopCount === 0) {
     const pct = Math.min(100, (State.totalFramesSent / State.totalFramesNeeded) * 100);
     $('p_total').textContent = pct.toFixed(1) + '%';
@@ -1366,12 +1839,12 @@ function updateProgressUI() {
 
     if (State.totalFramesSent > 30) {
       const eta = (elapsedMs / State.totalFramesSent) * (State.totalFramesNeeded - State.totalFramesSent);
-      $('p_eta').textContent = '首轮约 ' + fmtTime(eta);
+      $('p_eta').textContent = t('firstRoundEta', { time: fmtTime(eta) });
     }
   } else {
-    $('p_total').textContent = '🔁 持续传输中';
+    $('p_total').textContent = t('continuousProgress');
     $('p_bar').style.width = '100%';
-    $('p_eta').textContent = '循环补帧中, 可随时停止';
+    $('p_eta').textContent = t('continuousEta');
   }
 }
 
@@ -1393,7 +1866,49 @@ function updateThroughputHint() {
   const r   = parseFloat($('redundancy').value) || 1.5;
   const physMax    = fps * ESTIMATED_BYTES_PER_FRAME / 1024;
   const effectiveMin = physMax / r;
-  $('throughputHint').textContent = `预期 ~${effectiveMin.toFixed(0)}–${physMax.toFixed(0)} KB/s`;
+  $('throughputHint').textContent = t('throughput', {
+    min: effectiveMin.toFixed(0), max: physMax.toFixed(0),
+  });
+}
+
+function applyLocale(locale, persist = true) {
+  currentLocale = locale === 'zh-CN' ? 'zh-CN' : 'en';
+  document.documentElement.lang = currentLocale;
+  document.title = t('documentTitle');
+  document.querySelectorAll('[data-i18n]').forEach(el => {
+    el.textContent = t(el.dataset.i18n);
+  });
+  document.querySelectorAll('[data-i18n-html]').forEach(el => {
+    el.innerHTML = t(el.dataset.i18nHtml);
+  });
+  document.querySelectorAll('[data-i18n-title]').forEach(el => {
+    el.title = t(el.dataset.i18nTitle);
+  });
+  document.querySelectorAll('[data-i18n-aria-label]').forEach(el => {
+    el.setAttribute('aria-label', t(el.dataset.i18nAriaLabel));
+  });
+
+  const languageButton = $('btnLanguage');
+  languageButton.title = t('switchLanguage');
+  languageButton.setAttribute('aria-label', t('switchLanguage'));
+
+  if (persist) {
+    try {
+      localStorage.setItem(LOCALE_STORAGE_KEY, currentLocale);
+    } catch (_) {
+      // Storage can be unavailable in strict/private browser contexts; the in-page choice still works.
+    }
+  }
+
+  updateBundleSummary();
+  updatePreparedMode();
+  if (State.chunks.length > 0) renderModeCopy();
+  updateConfirmStats();
+  updateThroughputHint();
+  updateJumpButtonTitles();
+  if (State.active) updateProgressUI();
+  updateFullscreenButton();
+  renderLogs();
 }
 
 // ============= 事件绑定 =============
@@ -1451,7 +1966,7 @@ $('btnClearBundle').addEventListener('click', (e) => {
   if (_packingBundle) return;
   State.bundleItems = [];
   renderBundleList();
-  log('Cleared staged bundle items', 'ok');
+  logI18n('logBundleCleared', {}, 'ok');
 });
 
 $('btnStart').addEventListener('click', startTransmission);
@@ -1460,6 +1975,11 @@ $('btnStartPrepared').addEventListener('click', (e) => {
   startTransmission();
 });
 $('btnStop').addEventListener('click', stopTransmission);
+$('btnFullscreen').addEventListener('click', requestCodeFullscreen);
+$('btnExitFullscreen').addEventListener('click', exitCodeFullscreen);
+$('btnLanguage').addEventListener('click', () => {
+  applyLocale(currentLocale === 'en' ? 'zh-CN' : 'en');
+});
 $('btnDebug').addEventListener('click', () => $('log').classList.toggle('active'));
 $('btnConfirmChunk').addEventListener('click', markCurrentChunkCompleted);
 $('btnResetCompleted').addEventListener('click', resetCompleted);
@@ -1481,10 +2001,10 @@ window.addEventListener('drop', async (e) => {
   if (!f) return;
   if (State.active) {
     stopTransmission();
-    log('Auto-stopped previous transmission to load new file', 'ok');
+    logI18n('logAutoStopped', {}, 'ok');
   }
   await prepareFile(f);
-  log(`Loaded "${f.name}" (${fmtBytes(f.size)}). Click 开始传输 to start.`, 'ok');
+  logI18n('logLoaded', { name: f.name, size: fmtBytes(f.size) }, 'ok');
 });
 
 window.addEventListener('paste', async (e) => {
@@ -1507,7 +2027,8 @@ window.addEventListener('paste', async (e) => {
   }
 });
 
-log('Page loaded, waiting for wasm runtime...');
+applyLocale(currentLocale, false);
+logI18n('logPageLoaded');
 </script>
 
 <script src="vendor/cimbar-wasm-v0.6.4/cimbar_js.2026-01-20T0312.js"></script>
