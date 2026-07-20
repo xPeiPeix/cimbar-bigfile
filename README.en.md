@@ -70,10 +70,13 @@ Button visual states (left column in screenshot):
 
 #### 🔍 Full-screen scanning
 
-After transmission starts, click "Fullscreen code" ("全屏显示码图" in Chinese) to enlarge the cimbar code to fill the screen, making it easier for the phone camera to focus and scan. Full-screen mode shows only the complete, aspect-ratio-preserving code image and an auto-fading floating exit control; the side panels are hidden.
+After transmission starts, click "Fullscreen code" ("全屏显示码图" in Chinese) to enlarge the cimbar code to fill the screen, making it easier for the phone camera to focus and scan. Full-screen mode hides the side panels but keeps a status bar outside the code image. Large transfers enter guided lock: the sender locks the current (or next unfinished) chunk, keeps emitting refill frames, and shows the current chunk, total chunk count, saved count, and a "✅ Saved, lock next" button. The status bar stays visible so a chunk cannot change while the phone's save dialog is open and then be marked incorrectly.
 
 - Press `Esc` or click the floating exit control to return to the normal layout
-- Move the pointer or focus the control with the keyboard to reveal it again
+- After CFC saves the current chunk, confirm it in the full-screen status bar; the sender switches to and locks the next unfinished chunk
+- After every chunk is marked saved, the status bar says the transfer can stop and disables further confirmation
+- The guided-lock status bar stays visible; move the pointer or focus a control with the keyboard to reveal the auto-fading exit control
+- Exiting full-screen releases a lock added by guided mode; a manual lock that existed before entering is preserved
 - Stopping the transmission automatically exits full-screen mode
 
 ### Receiving
