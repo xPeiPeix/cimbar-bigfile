@@ -42,7 +42,7 @@ You can also collect ad-hoc content on the sender page before sending:
 - With one ordinary file or one pasted text item staged, the button reads "Start transmission" and sends the original file directly
 - With multiple files, or content selected through "Add folder" (even if the folder contains only one file), "Pack and start" creates a local `cimbar-bundle-*.tar` archive and sends it through the normal flow
 
-When packing is needed, it stays fully local in the browser; nothing is uploaded. The archive is an uncompressed `.tar`, extractable with Windows `tar`, 7-Zip, and similar tools.
+When packing is needed, it stays fully local in the browser; nothing is uploaded. The received result is an uncompressed `cimbar-bundle-*.tar` that must be extracted with Windows `tar`, 7-Zip, or a similar tool. Content selected through "Add folder" follows this rule even when the folder contains only one file.
 
 #### 💡 Speed up reception: jump · lock · confirm-saved
 
@@ -88,6 +88,8 @@ After transmission starts, click "Fullscreen code" ("全屏显示码图" in Chin
 4. After all chunks are received:
    - **Small file (≤ chunk size, default ≤ 10 MB)**: a single file with the original filename — **no reassembly needed**, what CFC saved IS the original file
    - **Large file (> chunk size)**: N+1 files — `manifest.json` + `<filename>.part00.bin` ... `<filename>.partNN.bin` — proceed to reassembly below
+
+> If the transmitted payload is `cimbar-bundle-*.tar`, it must still be extracted after direct reception or after large-file reassembly.
 
 ### Reassembly (large files only)
 
