@@ -62,6 +62,8 @@
     }
     #center.fullscreen-active {
       width: 100vw; height: 100vh; background: #000;
+      box-sizing: border-box;
+      padding-bottom: max(64px, calc(env(safe-area-inset-bottom) + 52px));
     }
     #btnExitFullscreen {
       display: none; position: absolute; top: max(18px, env(safe-area-inset-top));
@@ -71,14 +73,52 @@
       font-family: inherit; font-size: 13px; font-weight: 500; line-height: 1.2;
       opacity: 1; transition: opacity 0.25s ease, background 0.2s ease;
     }
-    #center.fullscreen-active #btnExitFullscreen { display: block; }
-    #center.fullscreen-active.fullscreen-controls-hidden #btnExitFullscreen {
+    #center.fullscreen-active #btnExitFullscreen {
+      display: block; top: auto; bottom: max(14px, env(safe-area-inset-bottom));
+    }
+    #fullscreenHud {
+      display: none; position: absolute;
+      left: max(18px, env(safe-area-inset-left));
+      bottom: max(12px, env(safe-area-inset-bottom));
+      z-index: 20; max-width: calc(100vw - 190px);
+      align-items: center; gap: 10px;
+      padding: 7px 10px; border: 1px solid rgba(255,255,255,0.42); border-radius: 7px;
+      background: rgba(0,0,0,0.76); color: #fff;
+      font-size: 13px; line-height: 1.25;
+      opacity: 1; transition: opacity 0.25s ease;
+    }
+    #center.fullscreen-active #fullscreenHud { display: flex; }
+    #fullscreenChunkStatus { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    #btnFullscreenConfirm {
+      flex: 0 0 auto; padding: 7px 10px; border: 1px solid #52c985; border-radius: 5px;
+      background: rgba(26, 122, 70, 0.92); color: #fff; cursor: pointer;
+      font-family: inherit; font-size: 12px; font-weight: 600;
+    }
+    #btnFullscreenConfirm:hover, #btnFullscreenConfirm:focus-visible { background: rgba(35, 151, 87, 0.98); }
+    #btnFullscreenConfirm:disabled { opacity: 0.55; cursor: not-allowed; }
+    #center.fullscreen-active.fullscreen-controls-hidden #btnExitFullscreen,
+    #center.fullscreen-active.fullscreen-controls-hidden #fullscreenHud {
       opacity: 0; pointer-events: none;
     }
-    #center.fullscreen-active.fullscreen-controls-hidden:focus-within #btnExitFullscreen {
+    #center.fullscreen-active.fullscreen-guided.fullscreen-controls-hidden #fullscreenHud {
+      opacity: 1; pointer-events: auto;
+    }
+    #center.fullscreen-active.fullscreen-controls-hidden:focus-within #btnExitFullscreen,
+    #center.fullscreen-active.fullscreen-controls-hidden:focus-within #fullscreenHud {
       opacity: 1; pointer-events: auto;
     }
     #btnExitFullscreen:hover, #btnExitFullscreen:focus-visible { background: rgba(35,35,35,0.94); }
+
+    @media (max-width: 700px) {
+      #center.fullscreen-active {
+        padding-bottom: max(104px, calc(env(safe-area-inset-bottom) + 92px));
+      }
+      #fullscreenHud {
+        right: max(18px, env(safe-area-inset-right));
+        bottom: max(50px, calc(env(safe-area-inset-bottom) + 38px));
+        max-width: none; justify-content: center; flex-wrap: wrap;
+      }
+    }
 
     /* 左右栏(横屏)/上下栏(竖屏): 放文件信息/跳转列表/确认/进度. 内容超出时各自滚动. */
     .side-panel {
@@ -408,6 +448,10 @@
 
   <div id="center">
     <canvas id="canvas"></canvas>
+    <div id="fullscreenHud">
+      <span id="fullscreenChunkStatus" role="status" aria-live="polite" aria-atomic="true"></span>
+      <button id="btnFullscreenConfirm" type="button" data-i18n="fullscreenConfirmChunk" hidden>✅ Saved, lock next</button>
+    </div>
     <button id="btnExitFullscreen" type="button" data-i18n="exitFullscreen">Exit fullscreen</button>
   </div>
 
@@ -461,10 +505,15 @@ const I18N = {
     start: 'Start transmission',
     stop: 'Stop',
     fullscreen: 'Fullscreen code',
-    fullscreenTitle: 'Show only the encoded image in fullscreen for easier scanning',
+    fullscreenTitle: 'Show the encoded image and transfer status in fullscreen for easier scanning',
     fullscreenUnavailable: 'Fullscreen is available during an active transmission',
     fullscreenUnsupported: 'This browser does not support fullscreen',
     exitFullscreen: 'Exit fullscreen',
+    fullscreenSimpleStatus: 'Sending {name} · direct transfer',
+    fullscreenChunkStatus: 'Sending {chunk} · {position}/{total} · {done} saved',
+    fullscreenChunkLockedStatus: '🔒 Locked on {chunk} · {position}/{total} · {done} saved',
+    fullscreenAllSavedStatus: '✅ All {total} files are saved · stop when ready',
+    fullscreenConfirmChunk: '✅ Saved, lock next',
     debugTitle: 'Toggle logs',
     switchLanguage: 'Switch to Chinese',
     targetLanguage: '中文',
@@ -571,10 +620,15 @@ const I18N = {
     start: '开始传输',
     stop: '停止',
     fullscreen: '全屏显示码图',
-    fullscreenTitle: '仅全屏显示编码图像，方便相机扫描',
+    fullscreenTitle: '全屏显示编码图像和传输状态，方便相机扫描',
     fullscreenUnavailable: '传输开始后可全屏显示码图',
     fullscreenUnsupported: '当前浏览器不支持全屏',
     exitFullscreen: '退出全屏',
+    fullscreenSimpleStatus: '正在发送 {name} · 单文件直发',
+    fullscreenChunkStatus: '正在发送 {chunk} · {position}/{total} · 已保存 {done}',
+    fullscreenChunkLockedStatus: '🔒 已锁定 {chunk} · {position}/{total} · 已保存 {done}',
+    fullscreenAllSavedStatus: '✅ {total} 个文件均已保存 · 可以停止传输',
+    fullscreenConfirmChunk: '✅ 已保存，锁定下一块',
     debugTitle: '切换日志显示',
     switchLanguage: 'Switch to English',
     targetLanguage: 'EN',
@@ -790,6 +844,9 @@ const State = {
   lockedRefillCount: 0,
   bundleItems: [],     // Array<{ path: string, file: File }>
 };
+let _payloadRevision = 0;
+let _confirmGuarded = false;
+let _confirmGuardTimer = null;
 
 const ESTIMATED_BYTES_PER_FRAME = 7500; // Mode B default ECC payload
 
@@ -842,6 +899,7 @@ function addBundleFile(file, path) {
 }
 
 function addBundleText(text) {
+  invalidatePreparedTransfer();
   const name = `clipboard-${timestampSlug()}.txt`;
   const file = new File([text], name, { type: 'text/plain;charset=utf-8', lastModified: Date.now() });
   addBundleFile(file, name);
@@ -903,6 +961,43 @@ function updatePreparedMode() {
     : t('multiPreparedMode', { total: State.chunks.length + 1 });
 }
 
+// 暂存内容与 prepared payload 必须保持单一事实源：只要暂存集合发生变化，之前由旧集合
+// 生成的 tar（或此前直接选择的文件）就不再允许从顶部 Start 重新发送。
+function invalidatePreparedTransfer() {
+  _payloadRevision += 1;
+  clearTimeout(_confirmGuardTimer);
+  _confirmGuardTimer = null;
+  _confirmGuarded = false;
+  State.file = null;
+  State.chunks = [];
+  State.manifest = null;
+  State.manifestBytes = null;
+  State.simpleMode = false;
+  State.encodeIdBase = 0;
+  State.curChunkIndex = -1;
+  State.framesInChunk = 0;
+  State.framesNeededInChunk = 0;
+  State.totalFramesSent = 0;
+  State.totalFramesNeeded = 0;
+  State.startTime = 0;
+  State.jumpRequested = null;
+  State.lockedChunkIndex = -1;
+  State.lockedRefillCount = 0;
+  State.completedChunks = new Set();
+  State.loopCount = 0;
+  State.lastUiUpdate = 0;
+  $('m_filename').textContent = '—';
+  $('m_filesize').textContent = '—';
+  $('m_filehash').textContent = '—';
+  $('m_chunkcount').textContent = '—';
+  $('m_encodeid').textContent = '—';
+  renderPreparedPanel(null);
+  renderJumpButtons();
+  updateConfirmStats();
+  updateFullscreenStatus();
+  updateUiState();
+}
+
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
@@ -912,6 +1007,8 @@ async function stageFiles(files) {
     logI18n('logBundlePacking', {}, 'err');
     return;
   }
+  if (State.active || files.length === 0) return;
+  invalidatePreparedTransfer();
   for (const file of files) {
     addBundleFile(file, file.webkitRelativePath || file.name);
   }
@@ -1018,7 +1115,7 @@ async function sendBundle() {
   try {
     const archive = await createTarFile(items);
     logI18n('logArchiveCreated', { name: archive.name, size: fmtBytes(archive.size) }, 'ok');
-    await prepareFile(archive);
+    await prepareFile(archive, { preserveBundleItems: true });
     if (wasmReady && State.chunks.length > 0) {
       startTransmission();
     }
@@ -1039,6 +1136,8 @@ let _wasCodeFullscreen = false;
 let _fullscreenRequestPending = false;
 let _fullscreenRequestCancelled = false;
 let _fullscreenExitPromise = null;
+let _lastFullscreenStatusChunk = null;
+let _fullscreenAutoLocked = false;
 
 function fullscreenElement() {
   return document.fullscreenElement || document.webkitFullscreenElement || null;
@@ -1099,6 +1198,8 @@ function handleFullscreenChange() {
   const active = isCodeFullscreen();
   const center = $('center');
   if (active && (!State.active || _fullscreenRequestCancelled)) {
+    releaseFullscreenGuidedMode();
+    center.style.paddingBottom = '';
     center.classList.remove('fullscreen-active', 'fullscreen-controls-hidden');
     clearTimeout(_fullscreenControlsTimer);
     _wasCodeFullscreen = false;
@@ -1110,10 +1211,20 @@ function handleFullscreenChange() {
   center.classList.remove('fullscreen-controls-hidden');
   clearTimeout(_fullscreenControlsTimer);
   if (active) {
+    if (!_wasCodeFullscreen) {
+      enterFullscreenGuidedMode();
+      logI18n('logFullscreenEntered', {}, 'ok');
+    }
     showFullscreenControls();
-    if (!_wasCodeFullscreen) logI18n('logFullscreenEntered', {}, 'ok');
-  } else if (_wasCodeFullscreen) {
-    logI18n('logFullscreenExited', {}, 'ok');
+    _lastFullscreenStatusChunk = null;
+    updateFullscreenStatus({ forceReveal: true });
+  } else {
+    releaseFullscreenGuidedMode();
+    center.style.paddingBottom = '';
+    if (_wasCodeFullscreen) {
+      logI18n('logFullscreenExited', {}, 'ok');
+      _lastFullscreenStatusChunk = null;
+    }
   }
   _wasCodeFullscreen = active;
   requestAnimationFrame(fitCanvas);
@@ -1128,6 +1239,52 @@ function updateFullscreenButton() {
   button.title = !supported
     ? t('fullscreenUnsupported')
     : (State.active ? t('fullscreenTitle') : t('fullscreenUnavailable'));
+}
+
+function updateFullscreenStatus({ revealOnChange = false, forceReveal = false } = {}) {
+  const status = $('fullscreenChunkStatus');
+  const confirm = $('btnFullscreenConfirm');
+  const center = $('center');
+  if (!status || !confirm) return;
+
+  if (!State.active || State.curChunkIndex < 0 || State.chunks.length === 0) {
+    status.textContent = '';
+    confirm.hidden = true;
+    confirm.disabled = true;
+    center.classList.remove('fullscreen-guided');
+    _lastFullscreenStatusChunk = null;
+    return;
+  }
+
+  const changed = State.curChunkIndex !== _lastFullscreenStatusChunk;
+  if (State.simpleMode) {
+    status.textContent = t('fullscreenSimpleStatus', { name: State.file ? State.file.name : '—' });
+    confirm.hidden = true;
+    confirm.disabled = true;
+    center.classList.remove('fullscreen-guided');
+  } else {
+    const total = State.chunks.length + 1;
+    const allSaved = State.completedChunks.size >= total;
+    const locked = State.lockedChunkIndex === State.curChunkIndex;
+    center.classList.toggle('fullscreen-guided', isCodeFullscreen() && (locked || allSaved));
+    const params = {
+      chunk: chunkIndexLabel(State.curChunkIndex),
+      position: State.curChunkIndex + 1,
+      total,
+      done: State.completedChunks.size,
+    };
+    status.textContent = allSaved
+      ? t('fullscreenAllSavedStatus', params)
+      : t(locked ? 'fullscreenChunkLockedStatus' : 'fullscreenChunkStatus', params);
+    confirm.hidden = allSaved || !locked;
+    confirm.disabled = !State.active || _confirmGuarded || allSaved || !locked;
+  }
+
+  _lastFullscreenStatusChunk = State.curChunkIndex;
+  if (isCodeFullscreen()) {
+    requestAnimationFrame(fitCanvas);
+    if (forceReveal || (revealOnChange && changed)) showFullscreenControls();
+  }
 }
 
 // 每侧(横屏)/上下(竖屏)栏的最小留白, 保证跳转列表 + 进度信息可读.
@@ -1152,8 +1309,20 @@ function fitCanvas() {
   }
 
   if (isCodeFullscreen()) {
-    const fw = center.clientWidth;
-    const fh = center.clientHeight;
+    // HUD 可因窄屏换行、翻译或系统字号变高；用实际高度动态预留底部空间，避免压住码图定位角。
+    center.style.paddingBottom = '';
+    const baseStyle = getComputedStyle(center);
+    const hud = $('fullscreenHud');
+    const exitButton = $('btnExitFullscreen');
+    const hudStyle = getComputedStyle(hud);
+    const exitStyle = getComputedStyle(exitButton);
+    const baseBottom = parseFloat(baseStyle.paddingBottom || 0);
+    const hudReserve = parseFloat(hudStyle.bottom || 0) + hud.offsetHeight + 12;
+    const exitReserve = parseFloat(exitStyle.bottom || 0) + exitButton.offsetHeight + 12;
+    center.style.paddingBottom = `${Math.ceil(Math.max(baseBottom, hudReserve, exitReserve))}px`;
+    const style = getComputedStyle(center);
+    const fw = center.clientWidth - parseFloat(style.paddingLeft || 0) - parseFloat(style.paddingRight || 0);
+    const fh = center.clientHeight - parseFloat(style.paddingTop || 0) - parseFloat(style.paddingBottom || 0);
     if (fw <= 0 || fh <= 0) return;
     const cw = Math.max(80, Math.floor(Math.min(fw, fh * ratio)));
     const ch = Math.max(80, Math.floor(cw / ratio));
@@ -1285,7 +1454,7 @@ function applyMode() {
 
 // ============= 切片与 manifest 生成 =============
 let _preparing = false;
-async function prepareFile(file) {
+async function prepareFile(file, { preserveBundleItems = false } = {}) {
   // 串行化: 防止用户连续拖文件时两次 prepareFile 在 await 间交叉, 导致 State 字段错乱
   if (_preparing) {
     logI18n('logPreparingBusy', { name: file.name }, 'err');
@@ -1297,20 +1466,12 @@ async function prepareFile(file) {
     return;
   }
   _preparing = true;
+  let prepareRevision = -1;
   try {
     // 失败兜底 + race 防御: 任何后续 await 抛出, 或 await 期间 window-drop handler 先调
     // stopTransmission 让 btnStart 重启, 此时 State.chunks 必须先被清空, 防止用户用旧 chunks 启动新传输
-    State.chunks = [];
-    State.manifest = null;
-    State.manifestBytes = null;
-    State.file = null;
-    State.simpleMode = false;
-    State.jumpRequested = null;
-    State.lockedChunkIndex = -1;
-    State.lockedRefillCount = 0;
-    State.completedChunks = new Set();
-    $('btnStart').disabled = true;
-    renderPreparedPanel(null);
+    invalidatePreparedTransfer();
+    prepareRevision = _payloadRevision;
 
     logI18n('logPreparing', { name: file.name, size: fmtBytes(file.size) });
     State.file = file;
@@ -1319,9 +1480,11 @@ async function prepareFile(file) {
 
     const chunkSize = parseInt($('chunkSize').value, 10);
     const fileBytes = new Uint8Array(await file.arrayBuffer());
+    if (prepareRevision !== _payloadRevision) return;
 
     // SHA256 整文件 (UI 展示, simpleMode 不嵌 manifest 但 UI 仍显示)
     const fullSha = await sha256Hex(fileBytes);
+    if (prepareRevision !== _payloadRevision) return;
     $('m_filehash').textContent = fullSha.substring(0, 16) + '…';
 
     // encode_id_base: 时间戳低 16 位 (两种模式共用)
@@ -1347,6 +1510,7 @@ async function prepareFile(file) {
         const end = Math.min(start + chunkSize, file.size);
         const slice = fileBytes.subarray(start, end);
         const sha = await sha256Hex(slice);
+        if (prepareRevision !== _payloadRevision) return;
         chunks.push(slice);
         chunkMeta.push({ index: i, size: slice.length, sha256: sha });
       }
@@ -1366,6 +1530,13 @@ async function prepareFile(file) {
       logI18n('logSliced', { count: chunkCount, bytes: State.manifestBytes.length }, 'ok');
     }
 
+    // 只有新 payload 已完整读取、哈希并切片成功后，才提交“单文件直发替代暂存集合”。
+    // 准备失败或期间暂存集合被用户修改时，原暂存内容仍可恢复使用。
+    if (!preserveBundleItems && State.bundleItems.length > 0) {
+      State.bundleItems = [];
+      renderBundleList();
+    }
+
     renderPreparedPanel({
       name: file.name,
       size: fmtBytes(file.size),
@@ -1377,22 +1548,10 @@ async function prepareFile(file) {
     updateConfirmStats();
   } catch (err) {
     // OOM / arrayBuffer 失败等异常 — 把 UI 一起 reset, 避免半截信息让用户误以为加载成功
-    logI18n('logPrepareFailed', { name: file.name, error: err }, 'err');
-    State.chunks = [];
-    State.manifest = null;
-    State.manifestBytes = null;
-    State.file = null;
-    State.simpleMode = false;
-    State.jumpRequested = null;
-    State.lockedChunkIndex = -1;
-    State.lockedRefillCount = 0;
-    State.completedChunks = new Set();
-    $('m_filename').textContent = '—';
-    $('m_filesize').textContent = '—';
-    $('m_filehash').textContent = '—';
-    $('m_chunkcount').textContent = '—';
-    $('m_encodeid').textContent = '—';
-    renderPreparedPanel(null);
+    if (prepareRevision === _payloadRevision) {
+      logI18n('logPrepareFailed', { name: file.name, error: err }, 'err');
+      invalidatePreparedTransfer();
+    }
   } finally {
     _preparing = false;
     updateUiState();
@@ -1469,6 +1628,7 @@ function stopTransmission() {
   renderJumpButtons();
   updateUiState();
   updateFullscreenButton();
+  updateFullscreenStatus();
   logI18n('logStopped', {}, 'ok');
 }
 
@@ -1553,6 +1713,60 @@ function lockChunk(idx) {
   }
 }
 
+function findNextUncompletedChunk(fromIdx, includeCurrent = false) {
+  if (State.simpleMode || State.chunks.length === 0) return -1;
+  const total = 1 + State.chunks.length;
+  const firstOffset = includeCurrent ? 0 : 1;
+  for (let offset = firstOffset; offset < firstOffset + total; offset++) {
+    const idx = (fromIdx + offset + total) % total;
+    if (!State.completedChunks.has(idx)) return idx;
+  }
+  return -1;
+}
+
+function jumpToLockedChunk(idx) {
+  if (!State.active || State.simpleMode || idx < 0) return;
+  State.jumpRequested = idx;
+  State.lockedChunkIndex = idx;
+  State.lockedRefillCount = 0;
+  logI18n('logLocked', { chunk: chunkIndexLabel(idx) }, 'ok');
+  advanceToNextChunk();
+}
+
+function enterFullscreenGuidedMode() {
+  _fullscreenAutoLocked = false;
+  if (!State.active || State.simpleMode || State.curChunkIndex < 0) return;
+
+  // 用户已在普通布局手动锁定时保持其意图；否则锁住当前（或下一个未完成）块，
+  // 让全屏确认始终对应 CFC 刚刚保存的同一块。
+  if (State.lockedChunkIndex >= 0) return;
+  const target = findNextUncompletedChunk(State.curChunkIndex, true);
+  if (target < 0) return;
+
+  _fullscreenAutoLocked = true;
+  State.lockedChunkIndex = target;
+  State.lockedRefillCount = 0;
+  logI18n('logLocked', { chunk: chunkIndexLabel(target) }, 'ok');
+  if (target !== State.curChunkIndex) {
+    State.jumpRequested = target;
+    advanceToNextChunk();
+  } else {
+    renderChunkButtonStates();
+    updateProgressUI();
+  }
+}
+
+function releaseFullscreenGuidedMode() {
+  if (_fullscreenAutoLocked) {
+    State.lockedChunkIndex = -1;
+    State.lockedRefillCount = 0;
+    renderChunkButtonStates();
+    if (State.active) updateProgressUI();
+  }
+  _fullscreenAutoLocked = false;
+  $('center').classList.remove('fullscreen-guided');
+}
+
 // 统一渲染所有按钮状态. active 严格跟随 State.curChunkIndex (真正在播的块) — 单击/双击都立即 advance,
 // 切换瞬时完成, 故 active 永远 = 屏幕实际播放, 无显示超前歧义. locked 跟随 lockedChunkIndex.
 function renderChunkButtonStates() {
@@ -1616,10 +1830,37 @@ function saveCompletedToStorage() {
 function updateConfirmStats() {
   if (State.simpleMode || State.chunks.length === 0) {
     $('confirmStats').textContent = t('confirmStats', { done: 0, total: 0 });
+    updateConfirmAvailability();
     return;
   }
   const total = 1 + State.chunks.length;
   $('confirmStats').textContent = t('confirmStats', { done: State.completedChunks.size, total });
+  updateConfirmAvailability();
+}
+
+function updateConfirmAvailability() {
+  const total = State.simpleMode ? 0 : 1 + State.chunks.length;
+  const allSaved = total > 0 && State.completedChunks.size >= total;
+  $('btnConfirmChunk').disabled = !State.active || State.simpleMode || total === 0 || allSaved || _confirmGuarded;
+  const fullscreenConfirm = $('btnFullscreenConfirm');
+  if (fullscreenConfirm && !fullscreenConfirm.hidden) {
+    fullscreenConfirm.disabled = !State.active
+      || allSaved
+      || _confirmGuarded
+      || State.lockedChunkIndex !== State.curChunkIndex;
+  }
+}
+
+function beginConfirmGuard() {
+  _confirmGuarded = true;
+  clearTimeout(_confirmGuardTimer);
+  updateConfirmAvailability();
+  _confirmGuardTimer = setTimeout(() => {
+    _confirmGuardTimer = null;
+    _confirmGuarded = false;
+    updateConfirmAvailability();
+    updateFullscreenStatus();
+  }, 750);
 }
 
 function chunkIndexLabel(idx) {
@@ -1628,13 +1869,15 @@ function chunkIndexLabel(idx) {
   return `part${String(idx - 1).padStart(padW, '0')}`;
 }
 
-function markCurrentChunkCompleted() {
-  if (!State.active || State.simpleMode) return;
+function markCurrentChunkCompleted({ lockNext = false } = {}) {
+  if (!State.active || State.simpleMode || _confirmGuarded) return;
   // [P2 codex] 显式清挂起的单击定时器: C2 换用 renderChunkButtonStates 后丢失了原 renderJumpButtons 头部的 clearTimeout 兜底.
   // race 路径: 用户点别块 (装 500ms timer) → 500ms 内点 ✅ → setJumpTarget(next) 跳下一未完成 → 500ms 后 stale timer 覆盖回旧 idx.
   clearTimeout(_clickTimer); _clickTimer = null;
   const cur = State.curChunkIndex;
   if (cur < 0) return;
+  if (lockNext && State.lockedChunkIndex !== cur) return;
+  beginConfirmGuard();
   const total = 1 + State.chunks.length;
   State.completedChunks.add(cur);
   saveCompletedToStorage();
@@ -1645,18 +1888,18 @@ function markCurrentChunkCompleted() {
   // 不调 renderJumpButtons 重建 DOM, 否则会丢挂起的单击定时器 + 50 块时重绑 listener 有 jank.
   renderChunkButtonStates();
   updateConfirmStats();
+  updateFullscreenStatus({ forceReveal: true });
 
-  // 从 cur+1 开始环形查找下一个未完成块
-  let next = -1;
-  for (let i = 1; i <= total; i++) {
-    const idx = (cur + i) % total;
-    if (!State.completedChunks.has(idx)) { next = idx; break; }
-  }
+  const next = findNextUncompletedChunk(cur);
   if (next === -1) {
     logI18n('logAllSaved', {}, 'ok');
     return;
   }
-  setJumpTarget(next);   // setJumpTarget 内部已立即 advance — 用户已确认收到, 不等当前块发完估算帧
+  if (lockNext) {
+    jumpToLockedChunk(next);
+  } else {
+    setJumpTarget(next);   // 普通布局保留自由循环；全屏 guided mode 使用 jumpToLockedChunk
+  }
 }
 
 function resetCompleted() {
@@ -1673,6 +1916,7 @@ function resetCompleted() {
   // 同上: 只改状态用 renderChunkButtonStates, 不重建 DOM
   renderChunkButtonStates();
   updateConfirmStats();
+  updateFullscreenStatus({ forceReveal: true });
   logI18n('logClearedSaved', { count: prevCount }, 'ok');
 }
 
@@ -1719,6 +1963,8 @@ function advanceToNextChunk() {
     logI18n('logSendingSimple', {
       name: State.file.name, size: fmtBytes(chunk.length), frames: State.framesNeededInChunk,
     }, 'ok');
+    updateProgressUI();
+    updateFullscreenStatus({ revealOnChange: true });
     return;
   }
 
@@ -1760,6 +2006,8 @@ function advanceToNextChunk() {
   // 按钮状态跟随当前实际播放的 chunk (跳转 / 自然推进 / 循环回 manifest / 锁定补帧都同步).
   // active 在此刻才点亮 = 真正切到该块, 与屏幕实际播放严格一致, 无显示超前歧义.
   renderChunkButtonStates();
+  updateProgressUI();
+  updateFullscreenStatus({ revealOnChange: true });
 }
 
 function stripExt(filename) {
@@ -1802,6 +2050,7 @@ function updateUiState() {
   $('btnAddFolder').disabled = State.active || _packingBundle;
   $('btnSendBundle').disabled = State.bundleItems.length === 0 || State.active || _preparing || _packingBundle;
   $('btnClearBundle').disabled = State.bundleItems.length === 0 || State.active || _packingBundle;
+  updateConfirmAvailability();
   updateFullscreenButton();
 }
 
@@ -1908,6 +2157,7 @@ function applyLocale(locale, persist = true) {
   updateJumpButtonTitles();
   if (State.active) updateProgressUI();
   updateFullscreenButton();
+  updateFullscreenStatus({ forceReveal: isCodeFullscreen() });
   renderLogs();
 }
 
@@ -1965,6 +2215,7 @@ $('btnClearBundle').addEventListener('click', (e) => {
   e.stopPropagation();
   if (_packingBundle) return;
   State.bundleItems = [];
+  invalidatePreparedTransfer();
   renderBundleList();
   logI18n('logBundleCleared', {}, 'ok');
 });
@@ -1977,11 +2228,15 @@ $('btnStartPrepared').addEventListener('click', (e) => {
 $('btnStop').addEventListener('click', stopTransmission);
 $('btnFullscreen').addEventListener('click', requestCodeFullscreen);
 $('btnExitFullscreen').addEventListener('click', exitCodeFullscreen);
+$('btnFullscreenConfirm').addEventListener('click', (event) => {
+  markCurrentChunkCompleted({ lockNext: true });
+  if (event.detail > 0) event.currentTarget.blur();
+});
 $('btnLanguage').addEventListener('click', () => {
   applyLocale(currentLocale === 'en' ? 'zh-CN' : 'en');
 });
 $('btnDebug').addEventListener('click', () => $('log').classList.toggle('active'));
-$('btnConfirmChunk').addEventListener('click', markCurrentChunkCompleted);
+$('btnConfirmChunk').addEventListener('click', () => markCurrentChunkCompleted());
 $('btnResetCompleted').addEventListener('click', resetCompleted);
 
 $('preset').addEventListener('change', (e) => applyPreset(e.target.value));
