@@ -563,7 +563,7 @@ const I18N = {
     errTarFieldTooLong: 'tar header field is too long: {value}',
     errTarNumberTooLarge: 'tar header number is too large: {value}',
     logStaged: 'Staged "{path}" ({size})',
-    logBundlePacking: 'Ignored: the bundle is being packed',
+    logBundlePacking: 'Ignored: staged items are being prepared',
     logArchiveCreated: 'Created archive "{name}" ({size})',
     logArchiveFailed: 'Failed to create archive: {error}',
     logWasmReady: 'WASM runtime initialized',
@@ -678,7 +678,7 @@ const I18N = {
     errTarFieldTooLong: 'tar 头字段过长：{value}',
     errTarNumberTooLarge: 'tar 头数值过大：{value}',
     logStaged: '已暂存“{path}”（{size}）',
-    logBundlePacking: '已忽略：正在打包暂存项',
+    logBundlePacking: '已忽略：正在准备暂存项',
     logArchiveCreated: '已创建归档“{name}”（{size}）',
     logArchiveFailed: '创建归档失败：{error}',
     logWasmReady: 'WASM 运行时已初始化',
@@ -935,6 +935,11 @@ function updateBundleSummary() {
       count,
       size: fmtBytes(State.bundleItems.reduce((sum, item) => sum + item.file.size, 0)),
     });
+
+  const actionKey = shouldArchiveBundle(State.bundleItems) ? 'sendBundle' : 'start';
+  const actionButton = $('btnSendBundle');
+  actionButton.dataset.i18n = actionKey;
+  actionButton.textContent = t(actionKey);
 }
 
 function renderPreparedPanel(info) {
@@ -1107,15 +1112,22 @@ async function createTarFile(items) {
   });
 }
 
+function shouldArchiveBundle(items) {
+  return items.length !== 1 || Boolean(items[0].file.webkitRelativePath);
+}
+
 async function sendBundle() {
   if (State.active || _packingBundle || State.bundleItems.length === 0) return;
   const items = State.bundleItems.slice();
   _packingBundle = true;
   updateUiState();
   try {
-    const archive = await createTarFile(items);
-    logI18n('logArchiveCreated', { name: archive.name, size: fmtBytes(archive.size) }, 'ok');
-    await prepareFile(archive, { preserveBundleItems: true });
+    let payload = items[0].file;
+    if (shouldArchiveBundle(items)) {
+      payload = await createTarFile(items);
+      logI18n('logArchiveCreated', { name: payload.name, size: fmtBytes(payload.size) }, 'ok');
+    }
+    await prepareFile(payload, { preserveBundleItems: true });
     if (wasmReady && State.chunks.length > 0) {
       startTransmission();
     }
