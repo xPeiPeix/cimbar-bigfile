@@ -411,7 +411,7 @@
       <button id="btnAddFiles" type="button" data-i18n="addFiles">Add files</button>
       <button id="btnAddFolder" type="button" data-i18n="addFolder">Add folder</button>
       <button id="btnSendBundle" type="button" class="primary" data-i18n="sendBundle" disabled>Pack and start</button>
-      <button id="btnClearBundle" type="button" data-i18n="clearBundle" disabled>Clear staged items</button>
+      <button id="btnClearBundle" type="button" data-i18n="clearBundle" disabled>Clear selection</button>
     </div>
     <div id="bundlePanel">
       <div id="bundleSummary">0 staged items</div>
@@ -522,7 +522,7 @@ const I18N = {
     addFiles: 'Add files',
     addFolder: 'Add folder',
     sendBundle: 'Pack and start',
-    clearBundle: 'Clear staged items',
+    clearBundle: 'Clear selection',
     stagedEmpty: '0 staged items',
     stagedCount: '{count} staged items · {size}',
     preparedTitle: 'Ready to send',
@@ -596,7 +596,7 @@ const I18N = {
     logAllStreamsLoop: 'All streams sent for {count} round(s). Looping back to the manifest.',
     logSendingManifest: '>>> Sending manifest ({bytes} bytes, ~{frames} frames)',
     logSendingChunk: '>>> Chunk {index}/{total} "{name}" ({size}, ~{frames} frames)',
-    logBundleCleared: 'Cleared staged bundle items',
+    logBundleCleared: 'Cleared selected items',
     logAutoStopped: 'Stopped the previous transmission before loading a new file',
     logLoaded: 'Loaded "{name}" ({size}). Select Start transmission when ready.',
     logPageLoaded: 'Page loaded; waiting for the WASM runtime…',
@@ -637,7 +637,7 @@ const I18N = {
     addFiles: '添加文件',
     addFolder: '添加文件夹',
     sendBundle: '打包并开始传输',
-    clearBundle: '清空暂存',
+    clearBundle: '清空已选内容',
     stagedEmpty: '暂存 0 项',
     stagedCount: '暂存 {count} 项 · {size}',
     preparedTitle: '已准备发送',
@@ -711,7 +711,7 @@ const I18N = {
     logAllStreamsLoop: '所有数据流已发送 {count} 轮，回到 manifest。',
     logSendingManifest: '>>> 正在发送 manifest（{bytes} 字节，约 {frames} 帧）',
     logSendingChunk: '>>> 第 {index}/{total} 块“{name}”（{size}，约 {frames} 帧）',
-    logBundleCleared: '已清空暂存项',
+    logBundleCleared: '已清空已选内容',
     logAutoStopped: '已停止上一个传输并加载新文件',
     logLoaded: '已加载“{name}”（{size}），准备好后点击开始传输。',
     logPageLoaded: '页面已加载，正在等待 WASM 运行时…',
@@ -2061,7 +2061,8 @@ function updateUiState() {
   $('btnAddFiles').disabled = State.active || _packingBundle;
   $('btnAddFolder').disabled = State.active || _packingBundle;
   $('btnSendBundle').disabled = State.bundleItems.length === 0 || State.active || _preparing || _packingBundle;
-  $('btnClearBundle').disabled = State.bundleItems.length === 0 || State.active || _packingBundle;
+  const hasSelectedItems = State.bundleItems.length > 0 || State.chunks.length > 0;
+  $('btnClearBundle').disabled = !hasSelectedItems || State.active || _packingBundle;
   updateConfirmAvailability();
   updateFullscreenButton();
 }
