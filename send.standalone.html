@@ -1604,6 +1604,7 @@ function startTransmission() {
   $('btnStart').disabled = true;
   $('btnStop').disabled = false;
   $('chunkSize').disabled = true;
+  updateUiState();
   // dropzone 隐藏 + 三栏显示后布局落定, canvas 必须重新 fit, 否则尺寸/marker 不对 → CFC 扫不到
   requestAnimationFrame(fitCanvas);
   updateFullscreenButton();
