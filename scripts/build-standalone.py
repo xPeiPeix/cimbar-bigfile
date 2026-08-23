@@ -140,16 +140,16 @@ def main() -> int:
     out_recv_html = recv_html.replace(SCRIPT_TAG, main_inline, 1)
     out_recv_html = out_recv_html.replace(WORKER_URL_LINE, worker_blob_line, 1)
 
-    # 两个产物作为同一代发布: 先把所有易失败的 I/O (tmp 写入) 全部做完,
-    # 再背靠背提交两次原子 rename。任何 tmp 写入失败都不会替换任何产物;
-    # 两次 rename 间的混合窗口仅亚毫秒级 (跨文件完美原子性在文件系统层面不存在)。
-    staged = []
+    # 两个产物作为同一代发布:
+    # 1) 先把所有易失败的 I/O (tmp 写入) 全部做完 — 任一 tmp 写入失败都不触碰现有产物;
+    # 2) publish_generation 逐文件 "旧→.prev 备份, 新→发布", 任一 rename 失败即整体回滚,
+    #    不留新旧混合 (跨文件完美原子性在文件系统层面不存在, 回滚将失败窗口收敛为可恢复)。
+    pairs = []
     for out, text in ((OUT_SEND, out_send_html), (OUT_RECV, out_recv_html)):
         tmp = out.with_suffix(out.suffix + ".tmp")
         tmp.write_text(text, encoding="utf-8")
-        staged.append((out, tmp))
-    for out, tmp in staged:
-        os.replace(tmp, out)
+        pairs.append((out, tmp))
+    publish_generation(pairs)
 
     wasm_mb = len(wasm_bytes) / 1024 / 1024
     print("[OK] standalone 构建完成")
@@ -157,6 +157,45 @@ def main() -> int:
     for out, src in ((OUT_SEND, SEND_HTML), (OUT_RECV, RECV_HTML)):
         print(f"     {out.name}: {out.stat().st_size / 1024 / 1024:.2f} MB (源 {src.name}: {src.stat().st_size / 1024:.1f} KB)")
     return 0
+
+
+def publish_generation(pairs: list[tuple[Path, Path]]) -> None:
+    """把多文件作为'一代产物'发布, 任一 rename 失败即整体回滚。
+
+    每个文件: 旧文件原子移入 `<final>.prev` 备份, 再把新 tmp 原子移入 final。
+    失败时按逆序回滚: 有备份的用备份覆盖已发布文件, 无备份的 (目标原本不存在)
+    删除已发布的新文件。回滚自身依赖 rename 可用性; 进程在两次 rename 之间被
+    强杀时 `.prev` 备份留在原地, 状态可诊断、可手动恢复。
+    """
+    published: list[tuple[Path, Path | None]] = []  # (final, backup 或 None)
+    try:
+        for final, tmp in pairs:
+            backup = final.with_suffix(final.suffix + ".prev")
+            had_previous = final.exists()
+            if had_previous:
+                os.replace(final, backup)
+            published.append((final, backup if had_previous else None))
+            os.replace(tmp, final)
+    except BaseException:
+        for final, backup in reversed(published):
+            try:
+                if backup is None:
+                    final.unlink(missing_ok=True)
+                else:
+                    os.replace(backup, final)
+            except OSError as exc:
+                print(
+                    f"ERR: 回滚失败, 旧产物仍备份在 {backup or '(无备份, 新文件已发布)'}: {exc}",
+                    file=sys.stderr,
+                )
+        raise
+    for _final, backup in published:
+        if backup is None:
+            continue
+        try:
+            backup.unlink(missing_ok=True)
+        except OSError as exc:
+            print(f"Install warning: 备份清理失败, 请手动删除 {backup}: {exc}", file=sys.stderr)
 
 
 if __name__ == "__main__":
