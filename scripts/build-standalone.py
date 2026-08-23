@@ -140,22 +140,23 @@ def main() -> int:
     out_recv_html = recv_html.replace(SCRIPT_TAG, main_inline, 1)
     out_recv_html = out_recv_html.replace(WORKER_URL_LINE, worker_blob_line, 1)
 
-    # 全部校验通过后再原子写出, 避免失败时留下"新 send + 旧 recv"的混合产物
-    atomic_write(OUT_SEND, out_send_html)
-    atomic_write(OUT_RECV, out_recv_html)
+    # 两个产物作为同一代发布: 先把所有易失败的 I/O (tmp 写入) 全部做完,
+    # 再背靠背提交两次原子 rename。任何 tmp 写入失败都不会替换任何产物;
+    # 两次 rename 间的混合窗口仅亚毫秒级 (跨文件完美原子性在文件系统层面不存在)。
+    staged = []
+    for out, text in ((OUT_SEND, out_send_html), (OUT_RECV, out_recv_html)):
+        tmp = out.with_suffix(out.suffix + ".tmp")
+        tmp.write_text(text, encoding="utf-8")
+        staged.append((out, tmp))
+    for out, tmp in staged:
+        os.replace(tmp, out)
+
     wasm_mb = len(wasm_bytes) / 1024 / 1024
     print("[OK] standalone 构建完成")
     print(f"     vendor wasm  : {wasm_mb:.2f} MB (base64 后 ~{wasm_mb*4/3:.2f} MB)")
     for out, src in ((OUT_SEND, SEND_HTML), (OUT_RECV, RECV_HTML)):
         print(f"     {out.name}: {out.stat().st_size / 1024 / 1024:.2f} MB (源 {src.name}: {src.stat().st_size / 1024:.1f} KB)")
     return 0
-
-
-def atomic_write(path: Path, text: str) -> None:
-    # 原子写: Ctrl+C / 磁盘满 / 编码失败时不会留下半截 standalone 文件让用户误用
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(text, encoding="utf-8")
-    os.replace(tmp, path)
 
 
 if __name__ == "__main__":
