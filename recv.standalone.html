@@ -462,33 +462,41 @@ const FILENAME_BUF = 4096;
 // ============= wasm 状态 =============
 let wasmReady = false;
 let wasmFailed = false;
-let _fountainBuf = null;   // Uint8Array view into wasm heap
-let _errBuf = null;        // report/filename scratch buffer
-let _decompBuf = null;
+// wasm 堆缓冲: 只存指针+尺寸, 每次使用创建新视图。
+// 堆增长 (ALLOW_MEMORY_GROWTH) 会替换底层 ArrayBuffer, 长期持有的视图会 detach 导致解码中断。
+let _fountainPtr = 0;
+let _fountainSize = 0;
+let _errPtr = 0;
+let _decompPtr = 0;
+let _decompSize = 0;
+
+function heapView(ptr, size) {
+  return new Uint8Array(Module.HEAPU8.buffer, ptr, size);
+}
 
 // 主线程 fountain sink — 与 vendored 的 recv-worker 配对:
 // worker 只做 scan+extract (图像 -> fountain frame bytes), 主线程做 fountain 解码。
 const Sink = {
   allocate() {
     const size = Module._cimbard_get_bufsize();
-    if (!_fountainBuf || size > _fountainBuf.length) {
-      if (_fountainBuf) Module._free(_fountainBuf.byteOffset);
-      const ptr = Module._malloc(size);
-      _fountainBuf = new Uint8Array(Module.HEAPU8.buffer, ptr, size);
+    if (size > _fountainSize) {
+      if (_fountainPtr) Module._free(_fountainPtr);
+      _fountainPtr = Module._malloc(size);
+      _fountainSize = size;
     }
-    if (!_errBuf) {
-      _errBuf = new Uint8Array(Module.HEAPU8.buffer, Module._malloc(FILENAME_BUF), FILENAME_BUF);
+    if (!_errPtr) {
+      _errPtr = Module._malloc(FILENAME_BUF);
     }
-    if (!_decompBuf) {
-      const dsize = Module._cimbard_get_decompress_bufsize();
-      _decompBuf = new Uint8Array(Module.HEAPU8.buffer, Module._malloc(dsize), dsize);
+    if (!_decompPtr) {
+      _decompSize = Module._cimbard_get_decompress_bufsize();
+      _decompPtr = Module._malloc(_decompSize);
     }
   },
 
   onDecode(bytes) {
     if (!bytes || bytes.length === 0) return;
-    _fountainBuf.set(bytes);
-    const res = Module._cimbard_fountain_decode(_fountainBuf.byteOffset, bytes.length);
+    heapView(_fountainPtr, _fountainSize).set(bytes);
+    const res = Module._cimbard_fountain_decode(_fountainPtr, bytes.length);
     // res 为 BigInt (int64): >0 = 完成的 encode id
     if (res > 0n) {
       const id = Number(res & 0xFFFFFFFFn);
@@ -501,10 +509,10 @@ const Sink = {
   },
 
   getReport() {
-    if (!wasmReady || !_errBuf) return null;
-    const len = Module._cimbard_get_report(_errBuf.byteOffset, FILENAME_BUF);
+    if (!wasmReady || !_errPtr) return null;
+    const len = Module._cimbard_get_report(_errPtr, FILENAME_BUF);
     if (len <= 0) return null;
-    const view = new Uint8Array(Module.HEAPU8.buffer, _errBuf.byteOffset, len);
+    const view = heapView(_errPtr, len);
     try {
       return JSON.parse(new TextDecoder().decode(view));
     } catch (e) {
@@ -515,11 +523,10 @@ const Sink = {
   handleCompleted(id) {
     const t0 = Date.now();
     // 1. 文件名 — 内部触发 recover(): 释放 slot, 数据进入 _reassembled
-    const fnLen = Module._cimbard_get_filename(id, _errBuf.byteOffset, FILENAME_BUF);
+    const fnLen = Module._cimbard_get_filename(id, _errPtr, FILENAME_BUF);
     let name;
     if (fnLen > 0) {
-      const view = new Uint8Array(Module.HEAPU8.buffer, _errBuf.byteOffset, fnLen);
-      name = new TextDecoder('utf-8').decode(view);
+      name = new TextDecoder('utf-8').decode(heapView(_errPtr, fnLen));
     }
     if (!name) name = 'stream-' + id;
 
@@ -529,9 +536,9 @@ const Sink = {
     const parts = [];
     let total = 0;
     while (true) {
-      const n = Module._cimbard_decompress_read(id, _decompBuf.byteOffset, _decompBuf.length);
+      const n = Module._cimbard_decompress_read(id, _decompPtr, _decompSize);
       if (n <= 0) break;
-      parts.push(new Uint8Array(Module.HEAPU8.buffer, _decompBuf.byteOffset, n).slice());
+      parts.push(heapView(_decompPtr, n).slice());
       total += n;
     }
 
@@ -790,7 +797,11 @@ function initWorkers() {
     const w = new Worker(WORKER_URL);
     w.onmessage = (event) => onWorkerMessage(event.data);
     w.onerror = (error) => {
-      console.error('[recv] worker ' + i + ' error:', error);
+      // worker 崩溃后不会再回消息, 移除出轮转并递减在途计数, 避免 _framesInFlight 泄漏导致永久丢帧
+      _framesInFlight = Math.max(0, _framesInFlight - 1);
+      const idx = _workers.indexOf(w);
+      if (idx >= 0) _workers.splice(idx, 1);
+      console.error('[recv] worker error:', error);
       log('wasmLoadFailed', {}, 'err');
     };
     _workers.push(w);
@@ -1299,6 +1310,8 @@ $('btnClear').addEventListener('click', () => {
   State.reassembled = false;
   State.progressWatermark = 0;
   $('info').style.display = 'none';
+  State.logs = [];
+  renderLogs();
   renderFileList();
   log('cleared', {}, 'ok');
 });

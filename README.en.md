@@ -51,7 +51,7 @@ No phone? A desktop browser can act as the receiver: `recv.standalone.html` embe
 
 > Like CFC, the receiver window must stay visible: browsers throttle callbacks for hidden pages and decoding stops. A short occlusion is fine — an rVFC watchdog switches to an rAF fallback path automatically.
 
-> Phone CFC users: see [Receiving](#receiving) / [Reassembly](#reassembly-large-files-only) below; the PC Receiver already covers both.
+> Phone CFC users: see [Receiving](#receiving-phone-cfc) / [Reassembly](#reassembly-large-files-only) below; the PC Receiver already covers both.
 
 
 

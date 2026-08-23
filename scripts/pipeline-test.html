@@ -87,19 +87,23 @@ function feedAll(bytes) {
 const decodeState = {
   fbPtr: null,
   fbSize: 0,
-  filenameBuf: null,
-  decompBuf: null,
+  filenamePtr: 0,
+  decompPtr: 0,
+  decompSize: 0,
   files: new Map(), // name -> Uint8Array
   completed: 0,
   framesFed: 0,
   extracted: 0,
 };
+function heapView(ptr, size) {
+  return new Uint8Array(Module.HEAPU8.buffer, ptr, size);
+}
 function allocDecode() {
   decodeState.fbSize = Module._cimbard_get_bufsize();
   decodeState.fbPtr = Module._malloc(decodeState.fbSize);
-  decodeState.filenameBuf = new Uint8Array(Module.HEAPU8.buffer, Module._malloc(4096), 4096);
-  const dsize = Module._cimbard_get_decompress_bufsize();
-  decodeState.decompBuf = new Uint8Array(Module.HEAPU8.buffer, Module._malloc(dsize), dsize);
+  decodeState.filenamePtr = Module._malloc(4096);
+  decodeState.decompSize = Module._cimbard_get_decompress_bufsize();
+  decodeState.decompPtr = Module._malloc(decodeState.decompSize);
 }
 
 // 渲染一帧编码器输出, 经 WebGL readPixels 取 RGBA (模拟屏幕/摄像头像素), 走解码管线;
@@ -138,21 +142,22 @@ function pumpOneFrame() {
 }
 // 与 recv.html Sink.handleCompleted 同语义: recover + 流式解压
 function collectCompleted(id) {
-  const fnLen = Module._cimbard_get_filename(id, decodeState.filenameBuf.byteOffset, 4096);
+  const fnLen = Module._cimbard_get_filename(id, decodeState.filenamePtr, 4096);
   let name;
   if (fnLen > 0) {
-    name = new TextDecoder('utf-8').decode(new Uint8Array(Module.HEAPU8.buffer, decodeState.filenameBuf.byteOffset, fnLen));
+    name = new TextDecoder('utf-8').decode(heapView(decodeState.filenamePtr, fnLen));
   }
   if (!name) name = 'stream-' + id;
 
   const parts = [];
   let total = 0;
   while (true) {
-    const n = Module._cimbard_decompress_read(id, decodeState.decompBuf.byteOffset, decodeState.decompBuf.length);
+    const n = Module._cimbard_decompress_read(id, decodeState.decompPtr, decodeState.decompSize);
     if (n <= 0) break;
-    parts.push(new Uint8Array(Module.HEAPU8.buffer, decodeState.decompBuf.byteOffset, n).slice());
+    parts.push(heapView(decodeState.decompPtr, n).slice());
     total += n;
   }
+
   const bytes = new Uint8Array(total);
   let off = 0;
   for (const p of parts) { bytes.set(p, off); off += p.length; }

@@ -50,7 +50,7 @@
 
 > 与 CFC 一样，接收窗口必须保持可见：浏览器对不可见页面的渲染/回调会节流，隐藏窗口会停止解码。若窗口短暂被遮挡，rVFC 看门狗会自动切换到 rAF 回退路径继续解码。
 
-> 手机 CFC 接收流程见下文 [接收](#接收) / [拼接](#拼接)；PC 接收端已在上方完成，自动拼接，无需 reassemble.html。
+> 手机 CFC 接收流程见下文 [接收](#接收手机-cfc) / [拼接](#拼接仅大文件需要)；PC 接收端已在上方完成，自动拼接，无需 reassemble.html。
 
 ### 发送
 
@@ -248,6 +248,7 @@ cimbar-bigfile 是 libcimbar 之上的轻量包装器。**本仓库由 MIT、MPL
 | 上述 wasm 内嵌的 wirehair fountain code 库 | **BSD-3-Clause** | © 2018 Christopher A. Taylor | 详见 [`vendor/LICENSE-wirehair`](vendor/LICENSE-wirehair) |
 | 用户独立安装的 CFC Android 接收端 (未 vendor) | **MIT** | © sz3 | 见 [github.com/sz3/cfc](https://github.com/sz3/cfc) |
 
+**MPL-2.0 source obligation**：本项目分发了 libcimbar 的 wasm 二进制（Executable Form），按 MPL-2.0 §3.2，对应的 source code 可在 https://github.com/sz3/libcimbar/tree/v0.6.4 免费获取。
 
 
 ### 致谢

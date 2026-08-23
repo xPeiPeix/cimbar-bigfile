@@ -88,7 +88,6 @@ def main() -> int:
         )
         return 1
     out_send_html = send_html.replace(SCRIPT_TAG, main_inline, 1)
-    atomic_write(OUT_SEND, out_send_html)
 
     # ---------- recv.standalone.html ----------
     recv_html = RECV_HTML.read_text(encoding="utf-8")
@@ -140,8 +139,10 @@ def main() -> int:
 
     out_recv_html = recv_html.replace(SCRIPT_TAG, main_inline, 1)
     out_recv_html = out_recv_html.replace(WORKER_URL_LINE, worker_blob_line, 1)
-    atomic_write(OUT_RECV, out_recv_html)
 
+    # 全部校验通过后再原子写出, 避免失败时留下"新 send + 旧 recv"的混合产物
+    atomic_write(OUT_SEND, out_send_html)
+    atomic_write(OUT_RECV, out_recv_html)
     wasm_mb = len(wasm_bytes) / 1024 / 1024
     print("[OK] standalone 构建完成")
     print(f"     vendor wasm  : {wasm_mb:.2f} MB (base64 后 ~{wasm_mb*4/3:.2f} MB)")
